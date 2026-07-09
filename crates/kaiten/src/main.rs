@@ -9,7 +9,7 @@ use std::process::ExitCode;
 
 use clap::Parser;
 
-use crate::cli::{Cli, Commands};
+use crate::cli::{Cli, Commands, McpCmd};
 use crate::error::CliError;
 
 fn init_tracing(verbosity: u8) {
@@ -29,7 +29,11 @@ async fn run(cli: Cli) -> Result<(), CliError> {
     match cli.command {
         Commands::Completion { shell } => commands::completion::run(shell),
         Commands::Auth(cmd) => commands::auth::run(cmd, cli.json).await,
-        Commands::Mcp(cmd) => mcp::run(cmd).await,
+        Commands::Mcp(McpCmd::Serve) => {
+            let resolved = config::resolve()?;
+            let client = kaiten_client::KaitenClient::new(&resolved.base_url, &resolved.token)?;
+            mcp::serve(client).await
+        }
         command => {
             let resolved = config::resolve()?;
             let client = kaiten_client::KaitenClient::new(&resolved.base_url, &resolved.token)?;

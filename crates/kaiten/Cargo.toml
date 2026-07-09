@@ -15,7 +15,9 @@ comfy-table = { workspace = true }
 dirs = { workspace = true }
 # reqwest::Method is constructed by the `api` command (Task 19)
 reqwest = { workspace = true }
+rmcp = { workspace = true }
 rpassword = { workspace = true }
+schemars = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
