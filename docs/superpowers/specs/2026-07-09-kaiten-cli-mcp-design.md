@@ -103,16 +103,18 @@ MCP-сервер — сабкоманда `kaiten mcp serve` в том же би
 ## CLI
 
 ```
-kaiten auth login|status              # login: домен+токен → проверка через /users/current
+kaiten auth login [--domain <d>] [--token <t>]   # без флагов — интерактивно; проверка через /users/current
+kaiten auth status
 kaiten space list
 kaiten board list --space <id>
 kaiten board view <id>                # колонки и дорожки с ID (нужны для move)
 kaiten card list [--board] [--space] [--column] [--mine] [--member] [--query]
-                 [--tag] [--type] [--limit]
+                 [--tag] [--type] [--archived] [--limit]
 kaiten card view <id|url> [--comments]
-kaiten card create --board <id> --title <t> [--column] [--lane] [--description] [--type]
+kaiten card create --board <id> --title <t> [--column] [--lane] [--description] [--type] [--asap]
 kaiten card edit <id> [--title] [--description] [--type] [--asap]
 kaiten card move <id> --column <id> [--lane] [--board]
+kaiten card archive <id|url>          # condition=2
 kaiten card member add|remove <id> <user-id|email>
 kaiten card comment add <id> --body <text>
 kaiten card comment list <id>
@@ -152,7 +154,8 @@ kaiten mcp serve
 - Приоритет источников: флаги CLI → env → config.toml.
 - Env-переопределения: `KAITEN_TOKEN`, `KAITEN_DOMAIN`, `KAITEN_BASE_URL`
   (последняя — полный базовый URL, перекрывает domain; используется в тестах
-  для подмены на wiremock).
+  для подмены на wiremock), `KAITEN_CONFIG_DIR` (каталог конфига; нужен
+  тестам, чтобы не задевать реальный конфиг).
 - `kaiten auth login` спрашивает домен и токен (скрытый ввод), проверяет их
   запросом `/users/current` и только после успеха сохраняет конфиг;
   `kaiten auth status` показывает домен, текущего пользователя и источник
@@ -199,6 +202,14 @@ kaiten mcp serve
   инструменты регистрируются и их схемы валидны.
 - Фикстуры — `tests/fixtures/*.json`, снятые с реального API и обезличенные.
 - Линты: `cargo clippy -- -D warnings`, `cargo fmt --check`.
+
+## Документация
+
+README.md (на английском): установка (`cargo install --path crates/kaiten`),
+настройка авторизации, примеры команд, настройка автокомплита, регистрация
+MCP-сервера в агенте (`claude mcp add kaiten -- kaiten mcp serve`), приёмы
+отладки (`-v`/`-vv`, `RUST_LOG`, `kaiten api`), формат конфига с примером
+домена `mycompany` и секцией `[defaults]`.
 
 ## Критерии успеха
 
