@@ -41,7 +41,11 @@ async fn add_posts_text_body_and_parses_comment_without_author() {
         .await;
 
     let client = KaitenClient::new(&server.uri(), "test-token").unwrap();
-    let comment = client.comments().add(67089469, "test comment").await.unwrap();
+    let comment = client
+        .comments()
+        .add(67089469, "test comment")
+        .await
+        .unwrap();
 
     assert_eq!(comment.id, 85523991);
     assert_eq!(comment.text, "test comment");
