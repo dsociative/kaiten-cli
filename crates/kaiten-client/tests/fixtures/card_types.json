@@ -1,0 +1,24 @@
+[
+  {
+    "id": 1,
+    "name": "Card",
+    "color": 1,
+    "letter": "C",
+    "archived": false,
+    "company_id": null,
+    "uid": "64792c05-0d0d-4b19-a3a6-d3c34b0a197c",
+    "suggest_fields": true,
+    "created": "2014-11-13T22:20:14.374Z"
+  },
+  {
+    "id": 692718,
+    "name": "Bug",
+    "color": 3,
+    "letter": "B",
+    "archived": false,
+    "company_id": 398610,
+    "uid": "38fd521d-7ab8-472a-978e-f0313732c5f2",
+    "suggest_fields": true,
+    "created": "2026-07-09T15:13:27.813Z"
+  }
+]

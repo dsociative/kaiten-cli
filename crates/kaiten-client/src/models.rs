@@ -198,3 +198,12 @@ pub struct Comment {
     #[serde(default)]
     pub author_id: Option<u64>,
 }
+
+/// Company-level tag (GET /tags, POST /cards/{id}/tags).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct Tag {
+    pub id: u64,
+    pub name: String,
+    #[serde(default)]
+    pub color: Option<i64>,
+}
