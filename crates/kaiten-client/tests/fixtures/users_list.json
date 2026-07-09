@@ -1,0 +1,22 @@
+[
+  {
+    "id": 1068514,
+    "uid": "0abd61ea-9dc5-40eb-b0a9-0d452ba1d8a6",
+    "full_name": "dxmuser",
+    "username": "dxmuser",
+    "email": "user@example.com",
+    "activated": true,
+    "lng": "ru",
+    "timezone": "UTC",
+    "theme": "auto",
+    "virtual": false,
+    "role": 1
+  },
+  {
+    "id": 1068515,
+    "uid": "11111111-2222-3333-4444-555555555555",
+    "username": "bot",
+    "activated": false,
+    "virtual": true
+  }
+]

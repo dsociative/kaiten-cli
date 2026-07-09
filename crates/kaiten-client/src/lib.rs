@@ -3,5 +3,9 @@
 mod client;
 mod error;
 
+pub mod api;
+pub mod models;
+
 pub use client::KaitenClient;
 pub use error::{KaitenError, Result};
+pub use models::*;
