@@ -6,6 +6,20 @@ use serde::de::DeserializeOwned;
 use crate::error::{KaitenError, Result};
 
 const MAX_RETRIES: u32 = 3;
+const MAX_RETRY_WAIT_SECS: u64 = 5;
+
+/// How long to sleep before retrying a 429, given the `X-RateLimit-Reset`
+/// header value (`None` when the header is missing or unparseable).
+///
+/// Honest clamp: sleeps for the actual reset window, capped at
+/// `MAX_RETRY_WAIT_SECS` so a single retry never blocks for longer than that.
+/// A missing/unparseable header falls back to a 1s wait.
+fn retry_wait_secs(reset_secs: Option<u64>) -> u64 {
+    match reset_secs {
+        Some(secs) => secs.min(MAX_RETRY_WAIT_SECS),
+        None => 1,
+    }
+}
 
 /// HTTP client for the Kaiten API.
 pub struct KaitenClient {
@@ -125,20 +139,20 @@ impl KaitenClient {
 
             if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
                 // The error carries the ACTUAL header value (missing/garbage -> 1);
-                // only the sleep below is clamped to <=5s.
-                let reset_secs = resp
+                // only the sleep below is clamped to <=5s via `retry_wait_secs`.
+                let reset_secs_raw = resp
                     .headers()
                     .get("X-RateLimit-Reset")
                     .and_then(|v| v.to_str().ok())
-                    .and_then(|v| v.parse::<u64>().ok())
-                    .unwrap_or(1);
+                    .and_then(|v| v.parse::<u64>().ok());
+                let reset_secs = reset_secs_raw.unwrap_or(1);
                 retries += 1;
                 if retries > MAX_RETRIES {
                     return Err(KaitenError::RateLimited {
                         retry_after_secs: reset_secs,
                     });
                 }
-                let wait_secs = if reset_secs <= 5 { reset_secs } else { 1 };
+                let wait_secs = retry_wait_secs(reset_secs_raw);
                 tracing::debug!(wait_secs, retry = retries, "rate limited, retrying");
                 tokio::time::sleep(Duration::from_secs(wait_secs)).await;
                 continue;
@@ -237,5 +251,15 @@ mod tests {
             KaitenError::Decode { path, .. } => assert_eq!(path, "id"),
             other => panic!("expected Decode error, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn retry_wait_secs_clamps_to_five_seconds() {
+        use super::retry_wait_secs;
+
+        assert_eq!(retry_wait_secs(Some(10)), 5);
+        assert_eq!(retry_wait_secs(Some(3)), 3);
+        assert_eq!(retry_wait_secs(Some(0)), 0);
+        assert_eq!(retry_wait_secs(None), 1);
     }
 }
