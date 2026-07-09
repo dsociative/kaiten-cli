@@ -1,5 +1,5 @@
-use kaiten_client::{CardFilter, KaitenClient};
-use wiremock::matchers::{header, method, path, query_param};
+use kaiten_client::{CardFilter, CreateCard, KaitenClient, UpdateCard};
+use wiremock::matchers::{body_partial_json, header, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 const CARDS_LIST: &str = include_str!("fixtures/cards_list.json");
@@ -103,4 +103,83 @@ async fn get_parses_full_card() {
     assert_eq!(card.checklists[0].items.len(), 1);
     assert_eq!(card.checklists[0].items[0].text, "first item");
     assert_eq!(card.checklists[0].items[0].checked, Some(true));
+}
+
+const CARD_CREATE: &str = include_str!("fixtures/card_create.json");
+const CARD_UPDATE: &str = include_str!("fixtures/card_update.json");
+
+/// Matches only if the JSON body is an object WITHOUT the given key.
+struct BodyLacksKey(&'static str);
+
+impl wiremock::Match for BodyLacksKey {
+    fn matches(&self, request: &wiremock::Request) -> bool {
+        serde_json::from_slice::<serde_json::Value>(&request.body)
+            .ok()
+            .and_then(|v| v.as_object().map(|o| !o.contains_key(self.0)))
+            .unwrap_or(false)
+    }
+}
+
+#[tokio::test]
+async fn create_sends_board_id_and_title_and_omits_none_fields() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/cards"))
+        .and(header("Authorization", "Bearer test-token"))
+        .and(body_partial_json(serde_json::json!({
+            "board_id": 1826109,
+            "title": "test card from cli"
+        })))
+        .and(BodyLacksKey("description"))
+        .and(BodyLacksKey("column_id"))
+        .and(BodyLacksKey("lane_id"))
+        .and(BodyLacksKey("type_id"))
+        .and(BodyLacksKey("asap"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(CARD_CREATE, "application/json"))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = KaitenClient::new(&server.uri(), "test-token").unwrap();
+    let req = CreateCard {
+        board_id: 1826109,
+        title: "test card from cli".to_string(),
+        ..Default::default()
+    };
+    let card = client.cards().create(&req).await.unwrap();
+
+    assert_eq!(card.id, 67089469);
+    assert_eq!(card.board_id, Some(1826109));
+    assert_eq!(card.column_id, Some(6308511));
+    // "description": null в ответе → None
+    assert!(card.description.is_none());
+    assert!(card.checklists.is_empty());
+}
+
+#[tokio::test]
+async fn update_with_column_id_is_move_and_omits_other_fields() {
+    let server = MockServer::start().await;
+    Mock::given(method("PATCH"))
+        .and(path("/cards/67089469"))
+        .and(header("Authorization", "Bearer test-token"))
+        .and(body_partial_json(serde_json::json!({ "column_id": 6308512 })))
+        .and(BodyLacksKey("title"))
+        .and(BodyLacksKey("description"))
+        .and(BodyLacksKey("board_id"))
+        .and(BodyLacksKey("condition"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(CARD_UPDATE, "application/json"))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = KaitenClient::new(&server.uri(), "test-token").unwrap();
+    let req = UpdateCard {
+        column_id: Some(6308512),
+        ..Default::default()
+    };
+    let card = client.cards().update(67089469, &req).await.unwrap();
+
+    assert_eq!(card.id, 67089469);
+    assert_eq!(card.asap, Some(true));
+    assert_eq!(card.description.as_deref(), Some("test **description**"));
 }

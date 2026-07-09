@@ -1,5 +1,5 @@
 use crate::client::KaitenClient;
-use crate::error::Result;
+use crate::error::{KaitenError, Result};
 use crate::models::Card;
 
 /// Filter for GET /cards. `None`/empty fields are omitted from the query.
@@ -57,6 +57,47 @@ impl CardFilter {
     }
 }
 
+/// Body for POST /cards. All fields except `board_id`/`title` are optional
+/// and omitted from JSON when `None`.
+#[derive(Debug, Default, Clone, serde::Serialize)]
+pub struct CreateCard {
+    pub board_id: u64,
+    pub title: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub column_id: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lane_id: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub type_id: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub asap: Option<bool>,
+}
+
+/// Body for PATCH /cards/{id}. Move = update with `column_id`/`lane_id`/`board_id`;
+/// archive = update with `condition = 2`. `None` fields are omitted from JSON.
+#[derive(Debug, Default, Clone, serde::Serialize)]
+pub struct UpdateCard {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub type_id: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub asap: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub column_id: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lane_id: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub board_id: Option<u64>,
+    /// 2 = archive the card.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub condition: Option<u8>,
+}
+
 /// Cards resource facade. Construct via [`KaitenClient::cards`].
 pub struct Cards<'a> {
     pub(crate) client: &'a KaitenClient,
@@ -80,6 +121,33 @@ impl Cards<'_> {
                 &format!("/cards/{card_id}"),
                 None,
                 None,
+            )
+            .await
+    }
+
+    /// POST /cards
+    pub async fn create(&self, req: &CreateCard) -> Result<Card> {
+        let body = serde_json::to_value(req).map_err(|e| KaitenError::Decode {
+            path: "CreateCard".to_string(),
+            source: e,
+        })?;
+        self.client
+            .request(reqwest::Method::POST, "/cards", None, Some(body))
+            .await
+    }
+
+    /// PATCH /cards/{id}
+    pub async fn update(&self, card_id: u64, req: &UpdateCard) -> Result<Card> {
+        let body = serde_json::to_value(req).map_err(|e| KaitenError::Decode {
+            path: "UpdateCard".to_string(),
+            source: e,
+        })?;
+        self.client
+            .request(
+                reqwest::Method::PATCH,
+                &format!("/cards/{card_id}"),
+                None,
+                Some(body),
             )
             .await
     }

@@ -9,4 +9,4 @@ pub mod models;
 pub use client::KaitenClient;
 pub use error::{KaitenError, Result};
 pub use models::*;
-pub use api::cards::CardFilter;
+pub use api::cards::{CardFilter, CreateCard, UpdateCard};
