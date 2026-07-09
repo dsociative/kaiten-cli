@@ -1,0 +1,29 @@
+---
+source: crates/kaiten/tests/card_view_test.rs
+expression: stdout
+---
+#67089469 test card from cli
+
+board:   test-board (1826109)
+column:  To Do (6308511)
+lane:    Default Lane (2293584)
+type:    Card
+owner:   dxmuser
+members: dxmuser
+tags:    cli-test
+asap:    yes
+created: 2026-07-09
+updated: 2026-07-09
+
+Description:
+test **description**
+
+Checklists:
+todo (11747430)
+  [x] first item (65658564)
+  [ ] second item (65658565)
+
+Properties:
+{
+  "id_19": "S"
+}
