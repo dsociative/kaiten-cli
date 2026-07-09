@@ -6,6 +6,23 @@ members = ["crates/kaiten-client", "crates/kaiten"]
 version = "0.1.0"
 edition = "2024"
 
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+# `KaitenClient::spaces()`/`.boards()`/etc. return lightweight facade structs
+# (`Spaces`, `Boards`, ...); calling them for their side-effect-free field access
+# and discarding the result is harmless, so `#[must_use]` on all 8 adds no value.
+must_use_candidate = "allow"
+# Errors are thiserror enums with self-explanatory variant names; per-function
+# "# Errors" doc sections would be pure repetition, not information.
+missing_errors_doc = "allow"
+# Doc comments frequently quote REST paths like `GET /cards/{card_id}` and example
+# URLs; the lint's auto-backtick suggestion for the former mis-splits on the `{}`
+# placeholders (e.g. "/`boards/{board_id`}"), so it's actively wrong here, not just noisy.
+doc_markdown = "allow"
+
 [workspace.dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }

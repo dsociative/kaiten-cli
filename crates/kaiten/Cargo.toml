@@ -7,6 +7,9 @@ edition.workspace = true
 name = "kaiten"
 path = "src/main.rs"
 
+[lints]
+workspace = true
+
 [dependencies]
 kaiten-client = { path = "../kaiten-client" }
 clap = { workspace = true }
