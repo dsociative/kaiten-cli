@@ -66,6 +66,16 @@ impl KaitenClient {
         crate::api::cards::Cards { client: self }
     }
 
+    /// Comments resource facade.
+    pub fn comments(&self) -> crate::api::comments::Comments<'_> {
+        crate::api::comments::Comments { client: self }
+    }
+
+    /// Card members resource facade.
+    pub fn members(&self) -> crate::api::members::Members<'_> {
+        crate::api::members::Members { client: self }
+    }
+
     /// Retry-and-trace core shared by ALL requests (JSON and empty responses alike).
     /// Returns `(status, raw response body)` on 2xx; maps 4xx/5xx (except 429) to
     /// `Api { status, message, body }` and an exhausted 429 to `RateLimited`.
@@ -164,6 +174,44 @@ impl KaitenClient {
         serde_path_to_error::deserialize(&mut de).map_err(|e| KaitenError::Decode {
             path: e.path().to_string(),
             source: e.into_inner(),
+        })
+    }
+
+    /// Perform a request whose response body may be empty and is ignored
+    /// (Kaiten DELETE endpoints return JSON or an empty body).
+    ///
+    /// Thin wrapper over `send_with_retry`, so the 429 retry loop and the
+    /// request/response tracing are shared with `request<T>`.
+    pub(crate) async fn request_empty(
+        &self,
+        method: Method,
+        path: &str,
+    ) -> Result<()> {
+        let (status, body) = self.send_with_retry(method, path, None, None).await?;
+        if (200..300).contains(&status) {
+            // 2xx: the body (JSON or empty) is ignored by design.
+            return Ok(());
+        }
+        // Same mapping rules as in `request<T>`: message = the JSON "message"
+        // field, else the raw body, else the canonical reason for an empty body.
+        let message = serde_json::from_str::<serde_json::Value>(&body)
+            .ok()
+            .and_then(|v| v.get("message").and_then(|m| m.as_str()).map(str::to_owned))
+            .unwrap_or_else(|| {
+                if body.trim().is_empty() {
+                    reqwest::StatusCode::from_u16(status)
+                        .ok()
+                        .and_then(|s| s.canonical_reason())
+                        .unwrap_or("unknown error")
+                        .to_string()
+                } else {
+                    body.clone()
+                }
+            });
+        Err(KaitenError::Api {
+            status,
+            message,
+            body,
         })
     }
 }

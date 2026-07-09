@@ -1,0 +1,23 @@
+[
+  {
+    "id": 85523991,
+    "uid": "ef4cb581-d2fd-4db9-ae85-aa352e27436d",
+    "created": "2026-07-09T15:18:03.341Z",
+    "updated": "2026-07-09T15:18:03.341Z",
+    "text": "test comment",
+    "type": 1,
+    "edited": false,
+    "card_id": 67089469,
+    "author_id": 1068514,
+    "internal": false,
+    "deleted": false,
+    "author": {
+      "id": 1068514,
+      "uid": "0abd61ea-9dc5-40eb-b0a9-0d452ba1d8a6",
+      "full_name": "dxmuser",
+      "email": "user@example.com",
+      "username": "dxmuser",
+      "activated": true
+    }
+  }
+]

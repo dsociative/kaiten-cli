@@ -182,3 +182,19 @@ pub struct Card {
     #[serde(default)]
     pub properties: Option<serde_json::Value>,
 }
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct Comment {
+    pub id: u64,
+    pub text: String,
+    #[serde(default)]
+    pub created: Option<String>,
+    #[serde(default)]
+    pub updated: Option<String>,
+    #[serde(default)]
+    pub edited: Option<bool>,
+    #[serde(default)]
+    pub author: Option<User>,
+    #[serde(default)]
+    pub author_id: Option<u64>,
+}
