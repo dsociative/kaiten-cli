@@ -1,6 +1,6 @@
 use kaiten_client::{CardFilter, CreateCard, KaitenClient, UpdateCard};
 
-use crate::cli::CardCmd;
+use crate::cli::{CardCmd, CardCommentCmd, CardMemberCmd};
 use crate::config::Defaults;
 use crate::error::CliError;
 use crate::output;
@@ -383,9 +383,105 @@ pub async fn run(
             print_card_kv(&card);
             Ok(())
         }
-        CardCmd::Member(_) | CardCmd::Comment(_) | CardCmd::Checklist(_) | CardCmd::Tag(_) => {
+        CardCmd::Member(cmd) => match cmd {
+            CardMemberCmd::Add { card, user } => {
+                let card_id = parse_card_ref(&card)?;
+                let user_id = resolve_user(client, &user).await?;
+                let member = client.members().add(card_id, user_id).await?;
+                if json {
+                    return output::print_json(&member);
+                }
+                println!("added user {user_id} to card {card_id}");
+                Ok(())
+            }
+            CardMemberCmd::Remove { card, user } => {
+                let card_id = parse_card_ref(&card)?;
+                let user_id = resolve_user(client, &user).await?;
+                client.members().remove(card_id, user_id).await?;
+                if json {
+                    return output::print_json(&serde_json::json!({
+                        "removed": true,
+                        "user_id": user_id,
+                    }));
+                }
+                println!("removed user {user_id} from card {card_id}");
+                Ok(())
+            }
+        },
+        CardCmd::Comment(cmd) => match cmd {
+            CardCommentCmd::Add { card, body } => {
+                let card_id = parse_card_ref(&card)?;
+                let comment = client.comments().add(card_id, &body).await?;
+                if json {
+                    return output::print_json(&comment);
+                }
+                println!("{}", comment.id);
+                Ok(())
+            }
+            CardCommentCmd::List { card } => {
+                let card_id = parse_card_ref(&card)?;
+                let comments = client.comments().list(card_id).await?;
+                if json {
+                    return output::print_json(&comments);
+                }
+                let mut table = output::table(&["ID", "AUTHOR", "CREATED", "TEXT"]);
+                for comment in &comments {
+                    let author = comment
+                        .author
+                        .as_ref()
+                        .and_then(|a| a.username.as_deref())
+                        .unwrap_or("-")
+                        .to_string();
+                    table.add_row(vec![
+                        comment.id.to_string(),
+                        author,
+                        date_cell(comment.created.as_deref()),
+                        truncate_text(&comment.text, 60),
+                    ]);
+                }
+                println!("{table}");
+                Ok(())
+            }
+        },
+        CardCmd::Checklist(_) | CardCmd::Tag(_) => {
             Err(CliError::InvalidArg("not implemented yet".into()))
         }
+    }
+}
+
+/// Resolve a `<user>` CLI argument into a user id.
+/// Numeric string -> id as is; contains `@` -> exact email match via GET /users.
+async fn resolve_user(client: &KaitenClient, user: &str) -> Result<u64, CliError> {
+    if let Ok(id) = user.parse::<u64>() {
+        return Ok(id);
+    }
+    if user.contains('@') {
+        let users = client.users().list().await?;
+        return users
+            .iter()
+            .find(|u| u.email.as_deref() == Some(user))
+            .map(|u| u.id)
+            .ok_or_else(|| CliError::InvalidArg(format!("no user with email `{user}`")));
+    }
+    Err(CliError::InvalidArg(format!(
+        "invalid user `{user}`: expected numeric id or email"
+    )))
+}
+
+/// Truncate to `max` chars, appending `…` when the text was longer.
+fn truncate_text(s: &str, max: usize) -> String {
+    let mut out: String = s.chars().take(max).collect();
+    if s.chars().count() > max {
+        out.push('…');
+    }
+    out
+}
+
+/// ISO datetime -> date part before 'T'; None -> "-".
+fn date_cell(value: Option<&str>) -> String {
+    match value {
+        Some(s) => s.split('T').next().unwrap_or(s).to_string(),
+        None => "-".to_string(),
     }
 }
 

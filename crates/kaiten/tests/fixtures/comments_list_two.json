@@ -1,0 +1,48 @@
+[
+  {
+    "id": 85523991,
+    "uid": "ef4cb581-d2fd-4db9-ae85-aa352e27436d",
+    "created": "2026-07-09T15:18:03.341Z",
+    "updated": "2026-07-09T15:18:03.341Z",
+    "text": "test comment",
+    "type": 1,
+    "edited": false,
+    "card_id": 67089469,
+    "author_id": 1068514,
+    "deleted": false,
+    "internal": false,
+    "author": {
+      "id": 1068514,
+      "uid": "0abd61ea-9dc5-40eb-b0a9-0d452ba1d8a6",
+      "full_name": "dxmuser",
+      "username": "dxmuser",
+      "email": "user@example.com",
+      "activated": true,
+      "lng": "ru",
+      "timezone": "UTC"
+    }
+  },
+  {
+    "id": 85523992,
+    "uid": "b2f7d3aa-9c11-4c6e-8a2f-77d0e1f2a3b4",
+    "created": "2026-07-10T09:02:11.000Z",
+    "updated": "2026-07-10T09:05:42.117Z",
+    "text": "deployment pipeline configuration must be updated together with the runbook before the next release",
+    "type": 1,
+    "edited": true,
+    "card_id": 67089469,
+    "author_id": 555001,
+    "deleted": false,
+    "internal": false,
+    "author": {
+      "id": 555001,
+      "uid": "7f9b2c31-56cd-4e0a-8f21-3d9a1b2c3d4e",
+      "full_name": "Second User",
+      "username": "seconduser",
+      "email": "second@example.com",
+      "activated": true,
+      "lng": "en",
+      "timezone": "UTC"
+    }
+  }
+]

@@ -1,0 +1,28 @@
+[
+  {
+    "id": 1068514,
+    "uid": "0abd61ea-9dc5-40eb-b0a9-0d452ba1d8a6",
+    "full_name": "dxmuser",
+    "username": "dxmuser",
+    "email": "user@example.com",
+    "activated": true,
+    "lng": "ru",
+    "timezone": "UTC",
+    "theme": "auto",
+    "role": 1,
+    "company_id": 398610
+  },
+  {
+    "id": 555001,
+    "uid": "7f9b2c31-56cd-4e0a-8f21-3d9a1b2c3d4e",
+    "full_name": "Second User",
+    "username": "seconduser",
+    "email": "second@example.com",
+    "activated": true,
+    "lng": "en",
+    "timezone": "UTC",
+    "theme": "auto",
+    "role": 2,
+    "company_id": 398610
+  }
+]
