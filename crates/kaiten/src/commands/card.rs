@@ -24,13 +24,6 @@ pub fn parse_card_ref(s: &str) -> Result<u64, CliError> {
     )))
 }
 
-fn user_display(user: &kaiten_client::User) -> String {
-    user.username
-        .clone()
-        .or_else(|| user.full_name.clone())
-        .unwrap_or_else(|| user.id.to_string())
-}
-
 fn print_card_details(card: &kaiten_client::Card) {
     println!("#{} {}", card.id, card.title);
     println!();
@@ -65,7 +58,10 @@ fn print_card_details(card: &kaiten_client::Card) {
     );
     println!(
         "owner:   {}",
-        card.owner.as_ref().map(user_display).unwrap_or_else(dash)
+        card.owner
+            .as_ref()
+            .map(output::user_label)
+            .unwrap_or_else(dash)
     );
     let members = card
         .members
@@ -246,7 +242,7 @@ pub async fn run(
                     let author = comment
                         .author
                         .as_ref()
-                        .map(user_display)
+                        .map(output::user_label)
                         .unwrap_or_else(|| "-".into());
                     let date = comment
                         .created

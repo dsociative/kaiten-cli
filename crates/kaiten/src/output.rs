@@ -7,6 +7,14 @@ pub fn print_json<T: serde::Serialize>(value: &T) -> Result<(), CliError> {
     Ok(())
 }
 
+/// Human-readable label for a user: username, else full name, else numeric id.
+pub(crate) fn user_label(user: &kaiten_client::User) -> String {
+    user.username
+        .clone()
+        .or_else(|| user.full_name.clone())
+        .unwrap_or_else(|| user.id.to_string())
+}
+
 #[allow(dead_code)]
 pub fn table(headers: &[&str]) -> comfy_table::Table {
     let mut table = comfy_table::Table::new();

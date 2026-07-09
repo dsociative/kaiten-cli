@@ -41,7 +41,10 @@ async fn login(domain: Option<String>, token: Option<String>) -> Result<(), CliE
     file.token = Some(token);
     file.save()?;
 
-    println!("Logged in to {domain}.kaiten.ru as {}", user_label(&user));
+    println!(
+        "Logged in to {domain}.kaiten.ru as {}",
+        output::user_label(&user)
+    );
     Ok(())
 }
 
@@ -66,15 +69,12 @@ async fn status(json: bool) -> Result<(), CliError> {
     println!("domain:       {}", domain.as_deref().unwrap_or("-"));
     println!("base_url:     {}", resolved.base_url);
     println!("token source: {source}");
-    println!("logged in as: {} (id {})", user_label(&user), user.id);
+    println!(
+        "logged in as: {} (id {})",
+        output::user_label(&user),
+        user.id
+    );
     Ok(())
-}
-
-fn user_label(user: &kaiten_client::User) -> String {
-    user.username
-        .clone()
-        .or_else(|| user.full_name.clone())
-        .unwrap_or_else(|| user.id.to_string())
 }
 
 fn prompt_line(prompt: &str) -> Result<String, CliError> {

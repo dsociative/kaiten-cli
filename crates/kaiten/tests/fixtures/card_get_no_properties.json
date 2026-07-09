@@ -1,0 +1,106 @@
+{
+  "id": 67089470,
+  "uid": "c78e313c-ab37-4456-9eb0-904681c4e310",
+  "title": "test card from cli",
+  "description": "test **description**",
+  "asap": true,
+  "archived": false,
+  "condition": 1,
+  "state": 1,
+  "board_id": 1826109,
+  "column_id": 6308511,
+  "lane_id": 2293584,
+  "type_id": 1,
+  "owner_id": 1068514,
+  "created": "2026-07-09T15:17:59.905Z",
+  "updated": "2026-07-09T15:18:07.303Z",
+  "due_date": null,
+  "comments_total": 1,
+  "version": 3,
+  "source": "api",
+  "estimate_workload": 0,
+  "board": {
+    "id": 1826109,
+    "title": "test-board",
+    "uid": "06a433b5-3626-48d4-865b-398312b08c3c"
+  },
+  "column": {
+    "id": 6308511,
+    "title": "To Do",
+    "type": 1,
+    "board_id": 1826109,
+    "sort_order": 1
+  },
+  "lane": {
+    "id": 2293584,
+    "title": "Default Lane",
+    "board_id": 1826109,
+    "sort_order": 1,
+    "condition": 1
+  },
+  "type": {
+    "id": 1,
+    "name": "Card",
+    "letter": "C",
+    "color": 1,
+    "archived": false
+  },
+  "owner": {
+    "id": 1068514,
+    "uid": "0abd61ea-9dc5-40eb-b0a9-0d452ba1d8a6",
+    "full_name": "dxmuser",
+    "username": "dxmuser",
+    "email": "user@example.com",
+    "activated": true
+  },
+  "members": [
+    {
+      "id": 1068514,
+      "user_id": 1068514,
+      "full_name": "dxmuser",
+      "username": "dxmuser",
+      "email": "user@example.com",
+      "type": 2,
+      "card_id": 67089470
+    }
+  ],
+  "tags": [
+    {
+      "id": 1110772,
+      "tag_id": 1110772,
+      "name": "cli-test",
+      "color": 15,
+      "card_id": 67089470
+    }
+  ],
+  "checklists": [
+    {
+      "id": 11747430,
+      "name": "todo",
+      "sort_order": 1.1522949931390465,
+      "card_id": 67089470,
+      "items": [
+        {
+          "id": 65658564,
+          "text": "first item",
+          "checked": true,
+          "sort_order": 1.7468834610088972,
+          "checklist_id": 11747430
+        },
+        {
+          "id": 65658565,
+          "text": "second item",
+          "checked": false,
+          "sort_order": 2.5,
+          "checklist_id": 11747430
+        }
+      ]
+    }
+  ],
+  "properties": null,
+  "card_permissions": {
+    "read": true,
+    "update": true
+  },
+  "email": "a+co-027702355f2e2fa1-c67089470@a.kaiten.ru"
+}

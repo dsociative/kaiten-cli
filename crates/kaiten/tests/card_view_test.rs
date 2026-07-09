@@ -4,6 +4,7 @@ use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 const CARD: &str = include_str!("fixtures/card_get_full.json");
+const CARD_NO_PROPERTIES: &str = include_str!("fixtures/card_get_no_properties.json");
 const COMMENTS: &str = include_str!("fixtures/comments_list.json");
 
 fn kaiten(config_dir: &std::path::Path, base_url: &str) -> Command {
@@ -85,6 +86,28 @@ async fn card_view_with_comments_makes_second_request() {
         .stdout(predicate::str::contains("Comments:"))
         .stdout(predicate::str::contains("test comment"))
         .stdout(predicate::str::contains("2026-07-09 dxmuser:"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn card_view_without_properties_hides_block() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/cards/67089470"))
+        .and(header("Authorization", "Bearer test-token"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_raw(CARD_NO_PROPERTIES, "application/json"),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+    let tmp = tempfile::tempdir().unwrap();
+
+    kaiten(tmp.path(), &server.uri())
+        .args(["card", "view", "67089470"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("#67089470 test card from cli"))
+        .stdout(predicate::str::contains("Properties:").not());
 }
 
 #[tokio::test(flavor = "multi_thread")]
