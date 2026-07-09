@@ -1,0 +1,21 @@
+---
+source: crates/kaiten/tests/space_board_test.rs
+expression: stdout
+---
+Board 1826109: test-board
+
+Columns:
+┌─────────────────────────────────────┐
+│ ID        TITLE         TYPE        │
+╞═════════════════════════════════════╡
+│ 6308511   To Do         queued      │
+│ 6308512   In Progress   in progress │
+│ 6308513   Done          done        │
+└─────────────────────────────────────┘
+
+Lanes:
+┌────────────────────────┐
+│ ID        TITLE        │
+╞════════════════════════╡
+│ 2293584   Default Lane │
+└────────────────────────┘

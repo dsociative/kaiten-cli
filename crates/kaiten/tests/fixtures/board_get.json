@@ -1,0 +1,50 @@
+{
+  "id": 1826109,
+  "title": "test-board",
+  "default_card_type_id": 1,
+  "uid": "06a433b5-3626-48d4-865b-398312b08c3c",
+  "email_key": "82d0383fccb73049",
+  "created": "2026-07-09T15:17:57.631Z",
+  "updated": "2026-07-09T15:17:57.631Z",
+  "columns": [
+    {
+      "id": 6308511,
+      "title": "To Do",
+      "sort_order": 1,
+      "type": 1,
+      "board_id": 1826109,
+      "col_count": 1,
+      "rules": 0,
+      "pause_sla": false
+    },
+    {
+      "id": 6308512,
+      "title": "In Progress",
+      "sort_order": 2,
+      "type": 2,
+      "board_id": 1826109,
+      "col_count": 1,
+      "rules": 0,
+      "pause_sla": false
+    },
+    {
+      "id": 6308513,
+      "title": "Done",
+      "sort_order": 3,
+      "type": 3,
+      "board_id": 1826109,
+      "col_count": 1,
+      "rules": 0,
+      "pause_sla": false
+    }
+  ],
+  "lanes": [
+    {
+      "id": 2293584,
+      "title": "Default Lane",
+      "sort_order": 1,
+      "board_id": 1826109,
+      "condition": 1
+    }
+  ]
+}

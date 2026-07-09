@@ -1,0 +1,10 @@
+---
+source: crates/kaiten/tests/space_board_test.rs
+expression: stdout
+---
+┌──────────────────────────────┐
+│ ID       TITLE               │
+╞══════════════════════════════╡
+│ 810671   kaiten-cli-test     │
+│ 810669   Первое пространство │
+└──────────────────────────────┘

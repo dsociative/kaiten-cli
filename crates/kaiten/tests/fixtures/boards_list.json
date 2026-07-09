@@ -1,0 +1,20 @@
+[
+  {
+    "id": 1826109,
+    "title": "test-board",
+    "default_card_type_id": 1,
+    "space_id": 810671,
+    "email_key": "82d0383fccb73049",
+    "sort_order": 657.8751055564335,
+    "type": 1
+  },
+  {
+    "id": 1826105,
+    "title": "Задачи",
+    "default_card_type_id": 1,
+    "space_id": 810671,
+    "email_key": "d9e2d48f2e54d94c",
+    "sort_order": 812.8977723550372,
+    "type": 1
+  }
+]
