@@ -93,20 +93,8 @@ fn print_card_details(card: &kaiten_client::Card) {
             "no"
         }
     );
-    println!(
-        "created: {}",
-        card.created
-            .as_deref()
-            .and_then(|d| d.split('T').next())
-            .unwrap_or("-")
-    );
-    println!(
-        "updated: {}",
-        card.updated
-            .as_deref()
-            .and_then(|d| d.split('T').next())
-            .unwrap_or("-")
-    );
+    println!("created: {}", date_cell(card.created.as_deref()));
+    println!("updated: {}", date_cell(card.updated.as_deref()));
     if let Some(description) = &card.description {
         println!();
         println!("Description:");
@@ -168,11 +156,7 @@ fn print_card_kv(card: &kaiten_client::Card) {
     ]);
     table.add_row(vec![
         "updated".to_string(),
-        card.updated
-            .as_deref()
-            .and_then(|d| d.split('T').next())
-            .unwrap_or("-")
-            .to_string(),
+        date_cell(card.updated.as_deref()),
     ]);
     println!("{table}");
 }
@@ -250,11 +234,7 @@ pub async fn run(
                     } else {
                         String::new()
                     },
-                    card.updated
-                        .as_deref()
-                        .and_then(|d| d.split('T').next())
-                        .unwrap_or("-")
-                        .to_string(),
+                    date_cell(card.updated.as_deref()),
                 ]);
             }
             println!("{table}");
@@ -284,11 +264,7 @@ pub async fn run(
                         .as_ref()
                         .map(output::user_label)
                         .unwrap_or_else(|| "-".into());
-                    let date = comment
-                        .created
-                        .as_deref()
-                        .and_then(|d| d.split('T').next())
-                        .unwrap_or("-");
+                    let date = date_cell(comment.created.as_deref());
                     println!("{date} {author}:");
                     println!("{}", comment.text);
                 }
