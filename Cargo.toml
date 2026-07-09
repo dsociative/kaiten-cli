@@ -1,0 +1,31 @@
+[workspace]
+resolver = "2"
+members = ["crates/kaiten-client", "crates/kaiten"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+
+[workspace.dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_path_to_error = "0.1"
+thiserror = "2"
+url = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+clap = { version = "4", features = ["derive", "env"] }
+clap_complete = "4"
+comfy-table = "7"
+toml = "0.8"
+dirs = "6"
+rpassword = "7"
+rmcp = { version = "2", features = ["server", "macros", "transport-io"] }
+schemars = "1"
+wiremock = "0.6"
+assert_cmd = "2"
+predicates = "3"
+insta = { version = "1", features = ["filters"] }
+tempfile = "3"
