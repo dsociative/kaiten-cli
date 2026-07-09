@@ -2,6 +2,11 @@
 name = "kaiten-client"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Typed async client for the Kaiten project tracker API"
+keywords = ["kaiten", "kanban", "api-client"]
+categories = ["api-bindings"]
 
 [lints]
 workspace = true

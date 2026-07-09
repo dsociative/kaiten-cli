@@ -11,8 +11,19 @@ in the spirit of `gh` / `glab`.
 
 ## Install
 
+From crates.io:
+
 ```sh
-git clone <repo-url> kaiten-cli
+cargo install kaiten-cli
+```
+
+Prebuilt binaries for Linux (x86_64/aarch64), macOS (x86_64/aarch64) and Windows
+are attached to [GitHub Releases](https://github.com/dsociative/kaiten-cli/releases).
+
+From source:
+
+```sh
+git clone https://github.com/dsociative/kaiten-cli
 cd kaiten-cli
 cargo install --path crates/kaiten
 ```
@@ -141,3 +152,8 @@ cargo test
 cargo clippy --all-targets -- -D warnings
 cargo fmt --all -- --check
 ```
+
+## License
+
+Licensed under either of [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE),
+at your option.

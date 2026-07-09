@@ -1,7 +1,13 @@
 [package]
-name = "kaiten"
+name = "kaiten-cli"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "CLI and MCP server for the Kaiten project tracker"
+keywords = ["kaiten", "kanban", "cli", "mcp"]
+categories = ["command-line-utilities"]
+readme = "../../README.md"
 
 [[bin]]
 name = "kaiten"
@@ -11,7 +17,7 @@ path = "src/main.rs"
 workspace = true
 
 [dependencies]
-kaiten-client = { path = "../kaiten-client" }
+kaiten-client = { path = "../kaiten-client", version = "0.1.0" }
 clap = { workspace = true }
 clap_complete = { workspace = true }
 comfy-table = { workspace = true }
