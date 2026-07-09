@@ -96,16 +96,56 @@ Add `--json` to any command to print the raw JSON of the API response.
 
 ## Shell completion
 
+### zsh
+
+Simplest — one line in `~/.zshrc` (requires `compinit` to be enabled, as in
+most zsh setups):
+
 ```sh
-# zsh
 eval "$(kaiten completion zsh)"
-# or, persisted:
-kaiten completion zsh > "${fpath[1]}/_kaiten"
+```
 
-# bash
+Or install a static completion file (faster shell startup):
+
+```sh
+mkdir -p ~/.zfunc
+kaiten completion zsh > ~/.zfunc/_kaiten
+```
+
+then make sure `~/.zshrc` adds the directory to `fpath` **before** `compinit`:
+
+```sh
+fpath+=(~/.zfunc)
+autoload -U compinit && compinit
+```
+
+Homebrew users can drop the file into
+`$(brew --prefix)/share/zsh/site-functions/_kaiten` instead — that directory
+is already in `fpath`.
+
+After installing or updating the file, rebuild the completion cache once and
+open a new shell:
+
+```sh
+rm -f ~/.zcompdump*
+```
+
+Avoid `kaiten completion zsh > "${fpath[1]}/_kaiten"`: `fpath` order inside a
+running shell usually differs from a fresh one, so the file lands in a
+directory new shells never look at.
+
+### bash
+
+Requires the `bash-completion` (v2) package:
+
+```sh
+mkdir -p ~/.local/share/bash-completion/completions
 kaiten completion bash > ~/.local/share/bash-completion/completions/kaiten
+```
 
-# fish
+### fish
+
+```sh
 kaiten completion fish > ~/.config/fish/completions/kaiten.fish
 ```
 
