@@ -1,0 +1,33 @@
+{
+  "id": 1826109,
+  "title": "test-board",
+  "default_card_type_id": 1,
+  "created": "2026-07-09T15:17:57.631Z",
+  "updated": "2026-07-09T15:17:57.631Z",
+  "uid": "06a433b5-3626-48d4-865b-398312b08c3c",
+  "email_key": "82d0383fccb73049",
+  "move_parents_to_done": true,
+  "columns": [
+    {
+      "id": 6308511,
+      "uid": "e8ba11a4-0832-49d6-b207-738582b09fde",
+      "title": "To Do",
+      "sort_order": 1,
+      "col_count": 1,
+      "type": 1,
+      "board_id": 1826109,
+      "rules": 0,
+      "pause_sla": false
+    }
+  ],
+  "lanes": [
+    {
+      "id": 2293584,
+      "uid": "23343a06-a444-41c7-9a5b-d804fb31dfdc",
+      "title": "Default Lane",
+      "sort_order": 1,
+      "board_id": 1826109,
+      "condition": 1
+    }
+  ]
+}

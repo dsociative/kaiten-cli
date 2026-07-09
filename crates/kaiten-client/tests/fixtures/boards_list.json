@@ -1,0 +1,22 @@
+[
+  {
+    "id": 1826105,
+    "title": "Задачи",
+    "default_card_type_id": 1,
+    "created": "2026-07-09T15:13:28.677Z",
+    "updated": "2026-07-09T15:13:28.677Z",
+    "uid": "cffde9fe-f694-49fd-af65-74cb96817c64",
+    "space_id": 810669,
+    "sort_order": 657.8751055564335,
+    "type": 1
+  },
+  {
+    "id": 1826106,
+    "title": "Полезные заметки",
+    "default_card_type_id": 1,
+    "uid": "91ff2974-1746-46a9-a5a4-2c3d67d36578",
+    "space_id": 810669,
+    "sort_order": 812.8977723550372,
+    "type": 1
+  }
+]
