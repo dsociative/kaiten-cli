@@ -1,0 +1,21 @@
+[
+  {
+    "id": 810669,
+    "uid": "f52db47b-cbd9-4b50-98e7-19219cae0291",
+    "title": "Первое пространство",
+    "archived": false,
+    "created": "2026-07-09T15:13:28.322Z",
+    "updated": "2026-07-09T15:13:29.995Z",
+    "company_id": 398610,
+    "entity_type": "space",
+    "access": "by_invite",
+    "sort_order": 1.6486044425519069
+  },
+  {
+    "id": 810671,
+    "uid": "8d5463f5-0752-4a08-b074-99d9617fbd4e",
+    "title": "kaiten-cli-test",
+    "entity_type": "space",
+    "path": "398610"
+  }
+]

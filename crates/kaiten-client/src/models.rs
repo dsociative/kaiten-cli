@@ -18,3 +18,12 @@ pub struct User {
     #[serde(default)]
     pub activated: Option<bool>,
 }
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct Space {
+    pub id: u64,
+    pub uid: String,
+    pub title: String,
+    #[serde(default)]
+    pub archived: Option<bool>,
+}

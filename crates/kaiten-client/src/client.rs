@@ -46,6 +46,11 @@ impl KaitenClient {
         self.request(method, path, None, body).await
     }
 
+    /// Spaces resource facade.
+    pub fn spaces(&self) -> crate::api::spaces::Spaces<'_> {
+        crate::api::spaces::Spaces { client: self }
+    }
+
     /// Users resource facade.
     pub fn users(&self) -> crate::api::users::Users<'_> {
         crate::api::users::Users { client: self }
