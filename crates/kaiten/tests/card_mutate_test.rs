@@ -28,7 +28,7 @@ async fn create_sends_board_and_title() {
         .and(path("/cards"))
         .and(header("Authorization", "Bearer test-token"))
         .and(body_partial_json(json!({
-            "board_id": 1826109,
+            "board_id": 1_826_109,
             "title": "new card"
         })))
         .respond_with(ResponseTemplate::new(200).set_body_raw(CARD_CREATE, "application/json"))
@@ -53,10 +53,10 @@ async fn create_sends_optional_fields() {
     Mock::given(method("POST"))
         .and(path("/cards"))
         .and(body_partial_json(json!({
-            "board_id": 1826109,
+            "board_id": 1_826_109,
             "title": "new card",
-            "column_id": 6308511,
-            "lane_id": 2293584,
+            "column_id": 6_308_511,
+            "lane_id": 2_293_584,
             "description": "body",
             "type_id": 1,
             "asap": true
@@ -95,7 +95,7 @@ async fn create_uses_defaults_board() {
     Mock::given(method("POST"))
         .and(path("/cards"))
         .and(body_partial_json(
-            json!({"board_id": 1826109, "title": "new card"}),
+            json!({"board_id": 1_826_109, "title": "new card"}),
         ))
         .respond_with(ResponseTemplate::new(200).set_body_raw(CARD_CREATE, "application/json"))
         .expect(1)
@@ -194,7 +194,7 @@ async fn move_sends_exactly_column_id() {
     let server = MockServer::start().await;
     Mock::given(method("PATCH"))
         .and(path("/cards/67089469"))
-        .and(body_json(json!({"column_id": 6308512})))
+        .and(body_json(json!({"column_id": 6_308_512})))
         .respond_with(ResponseTemplate::new(200).set_body_raw(CARD_UPDATE, "application/json"))
         .expect(1)
         .mount(&server)
@@ -213,9 +213,9 @@ async fn move_with_lane_and_board() {
     Mock::given(method("PATCH"))
         .and(path("/cards/67089469"))
         .and(body_json(json!({
-            "column_id": 6308512,
-            "lane_id": 2293584,
-            "board_id": 1826109
+            "column_id": 6_308_512,
+            "lane_id": 2_293_584,
+            "board_id": 1_826_109
         })))
         .respond_with(ResponseTemplate::new(200).set_body_raw(CARD_UPDATE, "application/json"))
         .expect(1)
@@ -270,7 +270,7 @@ async fn create_json_output() {
         .success();
     let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
     let value: serde_json::Value = serde_json::from_str(&stdout).unwrap();
-    assert_eq!(value["id"], 67089469);
+    assert_eq!(value["id"], 67_089_469);
     assert_eq!(value["title"], "new card");
 }
 

@@ -21,7 +21,7 @@ async fn list_parses_company_tags() {
     let tags = client.tags().list().await.unwrap();
 
     assert_eq!(tags.len(), 1);
-    assert_eq!(tags[0].id, 1110772);
+    assert_eq!(tags[0].id, 1_110_772);
     assert_eq!(tags[0].name, "cli-test");
     assert_eq!(tags[0].color, Some(15));
 }
@@ -41,11 +41,11 @@ async fn add_to_card_posts_tag_name() {
     let client = KaitenClient::new(&server.uri(), "test-token").unwrap();
     let tag = client
         .tags()
-        .add_to_card(67089469, "cli-test")
+        .add_to_card(67_089_469, "cli-test")
         .await
         .unwrap();
 
-    assert_eq!(tag.id, 1110772);
+    assert_eq!(tag.id, 1_110_772);
     assert_eq!(tag.name, "cli-test");
 }
 
@@ -63,7 +63,7 @@ async fn remove_from_card_returns_ok_on_empty_body() {
     let client = KaitenClient::new(&server.uri(), "test-token").unwrap();
     client
         .tags()
-        .remove_from_card(67089469, 1110772)
+        .remove_from_card(67_089_469, 1_110_772)
         .await
         .unwrap();
 }

@@ -27,7 +27,10 @@ fn init_tracing(verbosity: u8) {
 
 async fn run(cli: Cli) -> Result<(), CliError> {
     match cli.command {
-        Commands::Completion { shell } => commands::completion::run(shell),
+        Commands::Completion { shell } => {
+            commands::completion::run(shell);
+            Ok(())
+        }
         Commands::Auth(cmd) => commands::auth::run(cmd, cli.json).await,
         Commands::Mcp(McpCmd::Serve) => {
             let resolved = config::resolve()?;

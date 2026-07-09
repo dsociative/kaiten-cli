@@ -40,9 +40,10 @@ impl FileConfig {
         if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME") {
             return PathBuf::from(xdg).join("kaiten");
         }
-        dirs::home_dir()
-            .map(|home| home.join(".config").join("kaiten"))
-            .unwrap_or_else(|| PathBuf::from(".config/kaiten"))
+        dirs::home_dir().map_or_else(
+            || PathBuf::from(".config/kaiten"),
+            |home| home.join(".config").join("kaiten"),
+        )
     }
 
     /// Отсутствие файла — не ошибка: возвращается Default.
@@ -111,21 +112,20 @@ pub fn resolve_from(file: FileConfig, env: &HashMap<String, String>) -> Result<R
             }
         },
     };
-    let base_url = match env.get("KAITEN_BASE_URL").filter(|u| !u.is_empty()) {
-        Some(url) => url.trim_end_matches('/').to_string(),
-        None => {
-            let domain = env
-                .get("KAITEN_DOMAIN")
-                .filter(|d| !d.is_empty())
-                .cloned()
-                .or(file.domain);
-            match domain {
-                Some(domain) => format!("https://{domain}.kaiten.ru/api/latest"),
-                None => {
-                    return Err(CliError::Config(
-                        "no domain: run `kaiten auth login` or set KAITEN_DOMAIN".into(),
-                    ));
-                }
+    let base_url = if let Some(url) = env.get("KAITEN_BASE_URL").filter(|u| !u.is_empty()) {
+        url.trim_end_matches('/').to_string()
+    } else {
+        let domain = env
+            .get("KAITEN_DOMAIN")
+            .filter(|d| !d.is_empty())
+            .cloned()
+            .or(file.domain);
+        match domain {
+            Some(domain) => format!("https://{domain}.kaiten.ru/api/latest"),
+            None => {
+                return Err(CliError::Config(
+                    "no domain: run `kaiten auth login` or set KAITEN_DOMAIN".into(),
+                ));
             }
         }
     };

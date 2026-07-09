@@ -23,7 +23,7 @@ pub struct KaitenMcp {
 /// "API error 403: Forbidden" or "rate limited, retry after 5s") reaches it
 /// verbatim. Parameter-validation/serialization errors from the framework
 /// stay protocol errors — this helper is only for API-call failures.
-fn error_result(err: KaitenError) -> CallToolResult {
+fn error_result(err: &KaitenError) -> CallToolResult {
     CallToolResult::error(vec![ContentBlock::text(err.to_string())])
 }
 
@@ -34,7 +34,7 @@ macro_rules! try_api {
     ($e:expr) => {
         match $e {
             Ok(v) => v,
-            Err(e) => return Ok(error_result(e)),
+            Err(e) => return Ok(error_result(&e)),
         }
     };
 }
@@ -131,6 +131,10 @@ pub struct UpdateCardParams {
     pub asap: Option<bool>,
 }
 
+// The `_id` postfix on every field is the public MCP tool-parameter contract
+// (schemars-derived JSON schema seen by callers), not incidental naming; the
+// lint's fix would rename a documented external interface, not just style.
+#[allow(clippy::struct_field_names)]
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct MoveCardParams {
     /// Card id
@@ -471,7 +475,7 @@ mod tests {
         let mcp = mcp_for(&server);
         let result = mcp.list_spaces().await.unwrap();
         let value: serde_json::Value = serde_json::from_str(&tool_text(&result)).unwrap();
-        assert_eq!(value[0]["id"], 810669);
+        assert_eq!(value[0]["id"], 810_669);
         assert_eq!(value[0]["title"], "Первое пространство");
     }
 
@@ -531,7 +535,7 @@ mod tests {
             .and(path("/cards"))
             .and(header("Authorization", "Bearer test-token"))
             .and(body_json(serde_json::json!({
-                "board_id": 1826109,
+                "board_id": 1_826_109,
                 "title": "from mcp"
             })))
             .respond_with(ResponseTemplate::new(200).set_body_string(CARD_CREATE_FIXTURE))
@@ -542,7 +546,7 @@ mod tests {
         let mcp = mcp_for(&server);
         let result = mcp
             .create_card(Parameters(CreateCardParams {
-                board_id: 1826109,
+                board_id: 1_826_109,
                 title: "from mcp".to_string(),
                 column_id: None,
                 lane_id: None,
@@ -553,8 +557,8 @@ mod tests {
             .await
             .unwrap();
         let value: serde_json::Value = serde_json::from_str(&tool_text(&result)).unwrap();
-        assert_eq!(value["id"], 67089469);
-        assert_eq!(value["board_id"], 1826109);
+        assert_eq!(value["id"], 67_089_469);
+        assert_eq!(value["board_id"], 1_826_109);
     }
 
     #[tokio::test]

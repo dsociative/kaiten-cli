@@ -24,18 +24,18 @@ pub struct CardFilter {
 
 impl CardFilter {
     pub fn to_query(&self) -> Vec<(String, String)> {
-        fn push<T: ToString>(q: &mut Vec<(String, String)>, key: &str, value: &Option<T>) {
+        fn push<T: ToString>(q: &mut Vec<(String, String)>, key: &str, value: Option<&T>) {
             if let Some(v) = value {
                 q.push((key.to_string(), v.to_string()));
             }
         }
 
         let mut q: Vec<(String, String)> = Vec::new();
-        push(&mut q, "space_id", &self.space_id);
-        push(&mut q, "board_id", &self.board_id);
-        push(&mut q, "column_id", &self.column_id);
-        push(&mut q, "lane_id", &self.lane_id);
-        push(&mut q, "query", &self.query);
+        push(&mut q, "space_id", self.space_id.as_ref());
+        push(&mut q, "board_id", self.board_id.as_ref());
+        push(&mut q, "column_id", self.column_id.as_ref());
+        push(&mut q, "lane_id", self.lane_id.as_ref());
+        push(&mut q, "query", self.query.as_ref());
         if !self.member_ids.is_empty() {
             q.push((
                 "member_ids".to_string(),
@@ -46,13 +46,13 @@ impl CardFilter {
                     .join(","),
             ));
         }
-        push(&mut q, "owner_id", &self.owner_id);
-        push(&mut q, "tag", &self.tag);
-        push(&mut q, "type_id", &self.type_id);
-        push(&mut q, "archived", &self.archived);
-        push(&mut q, "condition", &self.condition);
-        push(&mut q, "limit", &self.limit);
-        push(&mut q, "offset", &self.offset);
+        push(&mut q, "owner_id", self.owner_id.as_ref());
+        push(&mut q, "tag", self.tag.as_ref());
+        push(&mut q, "type_id", self.type_id.as_ref());
+        push(&mut q, "archived", self.archived.as_ref());
+        push(&mut q, "condition", self.condition.as_ref());
+        push(&mut q, "limit", self.limit.as_ref());
+        push(&mut q, "offset", self.offset.as_ref());
         q
     }
 }

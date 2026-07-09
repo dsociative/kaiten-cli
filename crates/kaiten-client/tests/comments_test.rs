@@ -17,13 +17,13 @@ async fn list_parses_comments_with_author() {
         .await;
 
     let client = KaitenClient::new(&server.uri(), "test-token").unwrap();
-    let comments = client.comments().list(67089469).await.unwrap();
+    let comments = client.comments().list(67_089_469).await.unwrap();
 
     assert_eq!(comments.len(), 1);
-    assert_eq!(comments[0].id, 85523991);
+    assert_eq!(comments[0].id, 85_523_991);
     assert_eq!(comments[0].text, "test comment");
     assert_eq!(comments[0].edited, Some(false));
-    assert_eq!(comments[0].author_id, Some(1068514));
+    assert_eq!(comments[0].author_id, Some(1_068_514));
     let author = comments[0].author.as_ref().unwrap();
     assert_eq!(author.email.as_deref(), Some("user@example.com"));
 }
@@ -43,11 +43,11 @@ async fn add_posts_text_body_and_parses_comment_without_author() {
     let client = KaitenClient::new(&server.uri(), "test-token").unwrap();
     let comment = client
         .comments()
-        .add(67089469, "test comment")
+        .add(67_089_469, "test comment")
         .await
         .unwrap();
 
-    assert_eq!(comment.id, 85523991);
+    assert_eq!(comment.id, 85_523_991);
     assert_eq!(comment.text, "test comment");
     assert!(comment.author.is_none());
 }

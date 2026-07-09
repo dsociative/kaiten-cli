@@ -36,7 +36,7 @@ async fn api_get_prints_pretty_json_and_accepts_lowercase_method() {
     let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
     // stdout — валидный JSON
     let value: serde_json::Value = serde_json::from_str(&stdout).unwrap();
-    assert_eq!(value["id"], 1068514);
+    assert_eq!(value["id"], 1_068_514);
     // и он pretty-printed (двухпробельный отступ to_string_pretty)
     assert!(stdout.contains("  \"id\": 1068514"), "stdout: {stdout}");
 }
@@ -50,7 +50,7 @@ async fn api_post_sends_data_as_json_body() {
         .and(path("/cards"))
         .and(header("Authorization", "Bearer test-token"))
         .and(body_json(serde_json::json!({
-            "board_id": 1826109,
+            "board_id": 1_826_109,
             "title": "from raw api"
         })))
         .respond_with(

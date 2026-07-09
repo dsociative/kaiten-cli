@@ -10,16 +10,16 @@ async fn add_posts_user_id_and_parses_member() {
     Mock::given(method("POST"))
         .and(path("/cards/67089469/members"))
         .and(header("Authorization", "Bearer test-token"))
-        .and(body_json(serde_json::json!({ "user_id": 1068514 })))
+        .and(body_json(serde_json::json!({ "user_id": 1_068_514 })))
         .respond_with(ResponseTemplate::new(200).set_body_raw(MEMBER_ADD, "application/json"))
         .expect(1)
         .mount(&server)
         .await;
 
     let client = KaitenClient::new(&server.uri(), "test-token").unwrap();
-    let member = client.members().add(67089469, 1068514).await.unwrap();
+    let member = client.members().add(67_089_469, 1_068_514).await.unwrap();
 
-    assert_eq!(member.id, 1068514);
+    assert_eq!(member.id, 1_068_514);
     assert_eq!(member.member_type, Some(1));
     // в ответе POST /cards/{id}/members нет user_id
     assert_eq!(member.user_id, None);
@@ -37,7 +37,11 @@ async fn remove_returns_ok_on_empty_body() {
         .await;
 
     let client = KaitenClient::new(&server.uri(), "test-token").unwrap();
-    client.members().remove(67089469, 1068514).await.unwrap();
+    client
+        .members()
+        .remove(67_089_469, 1_068_514)
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
@@ -78,7 +82,7 @@ async fn remove_maps_403_with_empty_body_to_api_error() {
         .await;
 
     let client = KaitenClient::new(&server.uri(), "test-token").unwrap();
-    let err = client.members().remove(67089469, 999).await.unwrap_err();
+    let err = client.members().remove(67_089_469, 999).await.unwrap_err();
 
     match err {
         KaitenError::Api {

@@ -19,7 +19,7 @@ async fn list_parses_spaces_and_tolerates_missing_fields() {
     let spaces = client.spaces().list().await.unwrap();
 
     assert_eq!(spaces.len(), 2);
-    assert_eq!(spaces[0].id, 810669);
+    assert_eq!(spaces[0].id, 810_669);
     assert_eq!(spaces[0].title, "Первое пространство");
     assert_eq!(spaces[0].archived, Some(false));
     assert_eq!(spaces[1].title, "kaiten-cli-test");

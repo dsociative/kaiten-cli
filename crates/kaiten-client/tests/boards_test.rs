@@ -17,16 +17,16 @@ async fn get_parses_board_with_columns_and_lanes() {
         .await;
 
     let client = KaitenClient::new(&server.uri(), "test-token").unwrap();
-    let board = client.boards().get(1826109).await.unwrap();
+    let board = client.boards().get(1_826_109).await.unwrap();
 
-    assert_eq!(board.id, 1826109);
+    assert_eq!(board.id, 1_826_109);
     assert_eq!(board.title, "test-board");
     assert_eq!(board.default_card_type_id, Some(1));
     assert_eq!(board.columns.len(), 1);
     assert_eq!(board.columns[0].title, "To Do");
     // JSON-поле "type" (int) маппится в column_type
     assert_eq!(board.columns[0].column_type, Some(1));
-    assert_eq!(board.columns[0].board_id, Some(1826109));
+    assert_eq!(board.columns[0].board_id, Some(1_826_109));
     assert_eq!(board.lanes.len(), 1);
     assert_eq!(board.lanes[0].title, "Default Lane");
 }
@@ -43,7 +43,7 @@ async fn list_parses_boards_without_columns_and_lanes() {
         .await;
 
     let client = KaitenClient::new(&server.uri(), "test-token").unwrap();
-    let boards = client.boards().list(810669).await.unwrap();
+    let boards = client.boards().list(810_669).await.unwrap();
 
     assert_eq!(boards.len(), 2);
     assert_eq!(boards[0].title, "Задачи");

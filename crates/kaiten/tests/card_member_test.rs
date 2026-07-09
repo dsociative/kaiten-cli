@@ -20,7 +20,7 @@ async fn member_add_by_id_posts_user_id() {
     Mock::given(method("POST"))
         .and(path("/cards/67089469/members"))
         .and(header("Authorization", "Bearer test-token"))
-        .and(body_json(serde_json::json!({"user_id": 1068514})))
+        .and(body_json(serde_json::json!({"user_id": 1_068_514})))
         .respond_with(
             ResponseTemplate::new(200).set_body_string(include_str!("fixtures/member_added.json")),
         )
@@ -54,7 +54,7 @@ async fn member_add_by_email_resolves_via_users_list() {
 
     Mock::given(method("POST"))
         .and(path("/cards/67089469/members"))
-        .and(body_json(serde_json::json!({"user_id": 555001})))
+        .and(body_json(serde_json::json!({"user_id": 555_001})))
         .respond_with(
             ResponseTemplate::new(200).set_body_string(include_str!("fixtures/member_added.json")),
         )

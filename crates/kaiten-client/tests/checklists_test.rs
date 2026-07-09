@@ -19,9 +19,9 @@ async fn add_posts_name_and_parses_checklist_without_items_key() {
         .await;
 
     let client = KaitenClient::new(&server.uri(), "test-token").unwrap();
-    let checklist = client.checklists().add(67089469, "todo").await.unwrap();
+    let checklist = client.checklists().add(67_089_469, "todo").await.unwrap();
 
-    assert_eq!(checklist.id, 11747430);
+    assert_eq!(checklist.id, 11_747_430);
     assert_eq!(checklist.name, "todo");
     // ответ без ключа items → #[serde(default)] даёт пустой вектор
     assert!(checklist.items.is_empty());
@@ -44,11 +44,11 @@ async fn add_item_posts_text() {
     let client = KaitenClient::new(&server.uri(), "test-token").unwrap();
     let item = client
         .checklists()
-        .add_item(67089469, 11747430, "first item")
+        .add_item(67_089_469, 11_747_430, "first item")
         .await
         .unwrap();
 
-    assert_eq!(item.id, 65658564);
+    assert_eq!(item.id, 65_658_564);
     assert_eq!(item.text, "first item");
     assert_eq!(item.checked, Some(false));
 }
@@ -70,10 +70,10 @@ async fn set_item_checked_patches_checked_flag() {
     let client = KaitenClient::new(&server.uri(), "test-token").unwrap();
     let item = client
         .checklists()
-        .set_item_checked(67089469, 11747430, 65658564, true)
+        .set_item_checked(67_089_469, 11_747_430, 65_658_564, true)
         .await
         .unwrap();
 
-    assert_eq!(item.id, 65658564);
+    assert_eq!(item.id, 65_658_564);
     assert_eq!(item.checked, Some(true));
 }

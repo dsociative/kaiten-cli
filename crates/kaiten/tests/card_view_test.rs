@@ -122,7 +122,7 @@ async fn card_view_json() {
         .success();
     let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
     let value: serde_json::Value = serde_json::from_str(&stdout).unwrap();
-    assert_eq!(value["id"], 67089469);
+    assert_eq!(value["id"], 67_089_469);
     assert_eq!(value["checklists"][0]["items"][0]["checked"], true);
     assert_eq!(value["properties"]["id_19"], "S");
 }

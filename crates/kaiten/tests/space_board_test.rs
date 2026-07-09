@@ -56,7 +56,7 @@ async fn space_list_json() {
         .success();
     let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
     let value: serde_json::Value = serde_json::from_str(&stdout).unwrap();
-    assert_eq!(value[0]["id"], 810671);
+    assert_eq!(value[0]["id"], 810_671);
     assert_eq!(value[0]["title"], "kaiten-cli-test");
 }
 
@@ -134,7 +134,7 @@ async fn board_view_json() {
         .success();
     let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
     let value: serde_json::Value = serde_json::from_str(&stdout).unwrap();
-    assert_eq!(value["id"], 1826109);
+    assert_eq!(value["id"], 1_826_109);
     assert_eq!(value["columns"].as_array().unwrap().len(), 3);
     assert_eq!(value["lanes"].as_array().unwrap().len(), 1);
 }

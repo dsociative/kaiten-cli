@@ -68,7 +68,7 @@ async fn get_sends_bearer_and_returns_json() {
         .await
         .unwrap();
 
-    assert_eq!(value["id"], 1068514);
+    assert_eq!(value["id"], 1_068_514);
     assert_eq!(value["email"], "user@example.com");
 }
 
@@ -195,7 +195,7 @@ async fn retries_once_on_429_then_succeeds() {
         .await
         .unwrap();
 
-    assert_eq!(value["id"], 1068514);
+    assert_eq!(value["id"], 1_068_514);
 }
 
 #[tokio::test]
@@ -229,7 +229,9 @@ async fn raw_post_sends_body_and_returns_value() {
     Mock::given(method("POST"))
         .and(path("/cards"))
         .and(header("Authorization", "Bearer test-token"))
-        .and(body_json(json!({"board_id": 1826109, "title": "from raw"})))
+        .and(body_json(
+            json!({"board_id": 1_826_109, "title": "from raw"}),
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_raw(
             r#"{"id": 67089469, "title": "from raw", "board_id": 1826109}"#,
             "application/json",
@@ -243,11 +245,11 @@ async fn raw_post_sends_body_and_returns_value() {
         .raw(
             Method::POST,
             "/cards",
-            Some(json!({"board_id": 1826109, "title": "from raw"})),
+            Some(json!({"board_id": 1_826_109, "title": "from raw"})),
         )
         .await
         .unwrap();
 
-    assert_eq!(value["id"], 67089469);
+    assert_eq!(value["id"], 67_089_469);
     assert_eq!(value["title"], "from raw");
 }

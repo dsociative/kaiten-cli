@@ -29,12 +29,13 @@ pub struct KaitenClient {
 }
 
 impl std::fmt::Debug for KaitenClient {
-    // Manual impl: never print the bearer token, even via `{:?}`.
+    // Manual impl: never print the bearer token, even via `{:?}`, and skip the
+    // `http` field since `reqwest::Client` carries nothing useful to debug.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("KaitenClient")
             .field("base_url", &self.base_url)
             .field("token", &"***REDACTED***")
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
@@ -129,11 +130,12 @@ impl KaitenClient {
             let started = Instant::now();
             let resp = req.send().await?;
             let status = resp.status();
+            let elapsed = started.elapsed();
             tracing::debug!(
                 method = %method,
                 path,
                 status = status.as_u16(),
-                elapsed_ms = started.elapsed().as_millis() as u64,
+                elapsed_ms = elapsed.as_secs() * 1000 + u64::from(elapsed.subsec_millis()),
                 "http request"
             );
 
