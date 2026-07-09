@@ -204,9 +204,7 @@ pub async fn run(
             filter.query = query;
             filter.tag = tag;
             filter.type_id = type_id;
-            if archived {
-                filter.archived = Some(true);
-            }
+            filter.archived = Some(archived);
             if let Some(member_id) = member {
                 filter.member_ids.push(member_id);
             }

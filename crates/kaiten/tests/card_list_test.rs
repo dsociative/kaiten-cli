@@ -44,6 +44,27 @@ async fn card_list_uses_board_flag_and_default_limit() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn card_list_default_excludes_archived() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/cards"))
+        .and(header("Authorization", "Bearer test-token"))
+        .and(query_param("board_id", "1826109"))
+        .and(query_param("archived", "false"))
+        .and(query_param("limit", "50"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(CARDS, "application/json"))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let tmp = tempfile::tempdir().unwrap();
+
+    kaiten(tmp.path(), &server.uri())
+        .args(["card", "list", "--board", "1826109"])
+        .assert()
+        .success();
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn card_list_falls_back_to_defaults_board() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))

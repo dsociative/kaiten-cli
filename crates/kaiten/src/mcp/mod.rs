@@ -234,7 +234,7 @@ impl KaitenMcp {
             member_ids,
             tag: p.tag,
             type_id: p.type_id,
-            archived: p.archived,
+            archived: Some(p.archived.unwrap_or(false)),
             limit: Some(p.limit.unwrap_or(50)),
             ..Default::default()
         };
@@ -575,6 +575,28 @@ mod tests {
         let result = mcp
             .list_cards(Parameters(ListCardsParams {
                 mine: Some(true),
+                ..Default::default()
+            }))
+            .await
+            .unwrap();
+        assert_eq!(tool_text(&result).trim(), "[]");
+    }
+
+    #[tokio::test]
+    async fn list_cards_default_excludes_archived() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/cards"))
+            .and(query_param("archived", "false"))
+            .and(query_param("limit", "50"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("[]"))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let mcp = mcp_for(&server);
+        let result = mcp
+            .list_cards(Parameters(ListCardsParams {
                 ..Default::default()
             }))
             .await
