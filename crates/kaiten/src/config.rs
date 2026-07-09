@@ -59,18 +59,35 @@ impl FileConfig {
             .map_err(|err| CliError::Config(format!("invalid config {}: {err}", path.display())))
     }
 
-    /// Создаёт каталог, пишет config.toml с правами 0600 (unix).
+    /// Создаёт каталог, пишет config.toml с правами 0600 (unix) без окна с
+    /// более широкими правами: файл создаётся сразу с mode 0o600, а если он
+    /// уже существовал с более слабыми правами, они ужесточаются до записи
+    /// содержимого.
     pub fn save(&self) -> Result<(), CliError> {
         let dir = Self::dir();
         std::fs::create_dir_all(&dir)?;
         let path = dir.join("config.toml");
         let body = toml::to_string_pretty(self)
             .map_err(|err| CliError::Config(format!("failed to serialize config: {err}")))?;
-        std::fs::write(&path, body)?;
         #[cfg(unix)]
         {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))?;
+            use std::io::Write as _;
+            use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+            let mut file = std::fs::OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .mode(0o600)
+                .open(&path)?;
+            // `mode()` only applies when the file is created. If config.toml
+            // already existed with looser permissions, tighten them here,
+            // before any content (the token) is written.
+            file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+            file.write_all(body.as_bytes())?;
+        }
+        #[cfg(not(unix))]
+        {
+            std::fs::write(&path, body)?;
         }
         Ok(())
     }

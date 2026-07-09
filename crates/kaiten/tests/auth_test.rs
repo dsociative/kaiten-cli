@@ -64,6 +64,48 @@ async fn login_with_flags_saves_config_with_0600() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn save_tightens_permissions_of_existing_file() {
+    let server = MockServer::start().await;
+    mock_current_user(&server, "secret-token").await;
+    let tmp = tempfile::tempdir().unwrap();
+
+    let config_path = tmp.path().join("config.toml");
+    std::fs::write(&config_path, "domain = \"old\"\ntoken = \"old-token\"\n").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&config_path, std::fs::Permissions::from_mode(0o644)).unwrap();
+    }
+
+    kaiten(tmp.path())
+        .env("KAITEN_BASE_URL", server.uri())
+        .args([
+            "auth",
+            "login",
+            "--domain",
+            "mycompany",
+            "--token",
+            "secret-token",
+        ])
+        .assert()
+        .success();
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(&config_path)
+            .unwrap()
+            .permissions()
+            .mode();
+        assert_eq!(
+            mode & 0o777,
+            0o600,
+            "pre-existing config.toml must be tightened to 0600"
+        );
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn login_with_bad_token_does_not_save_config() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
