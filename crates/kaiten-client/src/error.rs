@@ -5,7 +5,11 @@ pub enum KaitenError {
     /// message — из JSON-поля "message" (или reason-фраза при пустом теле);
     /// body — сырое тело ответа целиком (пустая строка, если тела нет).
     #[error("API error {status}: {message}")]
-    Api { status: u16, message: String, body: String },
+    Api {
+        status: u16,
+        message: String,
+        body: String,
+    },
     #[error("rate limited, retry after {retry_after_secs}s")]
     RateLimited { retry_after_secs: u64 },
     #[error("network error: {0}")]
