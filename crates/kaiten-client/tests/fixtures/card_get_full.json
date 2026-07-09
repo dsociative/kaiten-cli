@@ -1,0 +1,107 @@
+{
+  "id": 67089469,
+  "uid": "c78e313c-ab37-4456-9eb0-904681c4e309",
+  "created": "2026-07-09T15:17:59.905Z",
+  "updated": "2026-07-09T15:18:07.303Z",
+  "archived": false,
+  "title": "test card from cli",
+  "asap": true,
+  "due_date": null,
+  "description": "test **description**",
+  "state": 1,
+  "condition": 1,
+  "board_id": 1826109,
+  "column_id": 6308511,
+  "lane_id": 2293584,
+  "owner_id": 1068514,
+  "type_id": 1,
+  "version": 3,
+  "comments_total": 1,
+  "comment_last_added_at": "2026-07-09T15:18:03.341Z",
+  "properties": null,
+  "goals_total": 1,
+  "goals_done": 1,
+  "description_filled": true,
+  "source": "api",
+  "lane": {
+    "id": 2293584,
+    "title": "Default Lane",
+    "sort_order": 1,
+    "board_id": 1826109,
+    "condition": 1
+  },
+  "board": {
+    "id": 1826109,
+    "uid": "06a433b5-3626-48d4-865b-398312b08c3c",
+    "title": "test-board"
+  },
+  "column": {
+    "id": 6308511,
+    "title": "To Do",
+    "sort_order": 1,
+    "col_count": 1,
+    "type": 1,
+    "board_id": 1826109
+  },
+  "type": {
+    "id": 1,
+    "name": "Card",
+    "color": 1,
+    "letter": "C",
+    "archived": false,
+    "suggest_fields": true
+  },
+  "checklists": [
+    {
+      "id": 11747430,
+      "name": "todo",
+      "sort_order": 1.1522949931390465,
+      "uid": "19d5b8ab-1baf-4537-8d42-5578949e75dd",
+      "card_id": 67089469,
+      "policy_id": null,
+      "items": [
+        {
+          "id": 65658564,
+          "text": "first item",
+          "checked": true,
+          "sort_order": 1.7468834610088972,
+          "checklist_id": 11747430,
+          "checker_id": 1068514,
+          "checked_at": "2026-07-09T15:18:05.989Z",
+          "deleted": false
+        }
+      ]
+    }
+  ],
+  "members": [
+    {
+      "id": 1068514,
+      "uid": "0abd61ea-9dc5-40eb-b0a9-0d452ba1d8a6",
+      "full_name": "dxmuser",
+      "email": "user@example.com",
+      "username": "dxmuser",
+      "activated": true,
+      "card_id": 67089469,
+      "user_id": 1068514,
+      "type": 1
+    }
+  ],
+  "tags": [
+    {
+      "id": 1110772,
+      "name": "cli-test",
+      "color": 15,
+      "created": "2026-07-09T15:18:07.303Z",
+      "card_id": 67089469,
+      "tag_id": 1110772
+    }
+  ],
+  "owner": {
+    "id": 1068514,
+    "uid": "0abd61ea-9dc5-40eb-b0a9-0d452ba1d8a6",
+    "full_name": "dxmuser",
+    "email": "user@example.com",
+    "username": "dxmuser",
+    "activated": true
+  }
+}

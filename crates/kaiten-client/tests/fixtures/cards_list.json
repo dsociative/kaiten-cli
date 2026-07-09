@@ -1,0 +1,62 @@
+[
+  {
+    "id": 67089469,
+    "uid": "c78e313c-ab37-4456-9eb0-904681c4e309",
+    "created": "2026-07-09T15:17:59.905Z",
+    "updated": "2026-07-09T15:17:59.905Z",
+    "archived": false,
+    "title": "test card from cli",
+    "asap": false,
+    "due_date": null,
+    "state": 1,
+    "condition": 1,
+    "board_id": 1826109,
+    "column_id": 6308511,
+    "lane_id": 2293584,
+    "owner_id": 1068514,
+    "type_id": 1,
+    "comments_total": 0,
+    "properties": null,
+    "sort_order": 1.0689198905237203,
+    "version": 1,
+    "blocked": false,
+    "source": "api",
+    "tag_ids": null,
+    "description_filled": false,
+    "board": {
+      "id": 1826109,
+      "uid": "06a433b5-3626-48d4-865b-398312b08c3c",
+      "title": "test-board"
+    },
+    "column": {
+      "id": 6308511,
+      "title": "To Do",
+      "sort_order": 1,
+      "col_count": 1,
+      "type": 1,
+      "board_id": 1826109
+    },
+    "lane": {
+      "id": 2293584,
+      "title": "Default Lane",
+      "sort_order": 1,
+      "board_id": 1826109,
+      "condition": 1
+    },
+    "type": {
+      "id": 1,
+      "name": "Card",
+      "color": 1,
+      "letter": "C",
+      "archived": false
+    },
+    "owner": {
+      "id": 1068514,
+      "uid": "0abd61ea-9dc5-40eb-b0a9-0d452ba1d8a6",
+      "full_name": "dxmuser",
+      "email": "user@example.com",
+      "username": "dxmuser",
+      "activated": true
+    }
+  }
+]

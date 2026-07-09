@@ -61,6 +61,11 @@ impl KaitenClient {
         crate::api::boards::Boards { client: self }
     }
 
+    /// Cards resource facade.
+    pub fn cards(&self) -> crate::api::cards::Cards<'_> {
+        crate::api::cards::Cards { client: self }
+    }
+
     /// Retry-and-trace core shared by ALL requests (JSON and empty responses alike).
     /// Returns `(status, raw response body)` on 2xx; maps 4xx/5xx (except 429) to
     /// `Api { status, message, body }` and an exhausted 429 to `RateLimited`.
