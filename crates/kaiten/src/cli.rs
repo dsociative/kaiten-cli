@@ -1,0 +1,285 @@
+use clap::{Parser, Subcommand, ValueEnum};
+
+#[derive(Parser)]
+#[command(
+    name = "kaiten",
+    version,
+    about = "Kaiten tracker CLI",
+    propagate_version = true
+)]
+pub struct Cli {
+    /// Print raw JSON instead of tables
+    #[arg(long, global = true)]
+    pub json: bool,
+
+    /// Increase log verbosity (-v: debug, -vv: trace)
+    #[arg(short = 'v', long = "verbose", action = clap::ArgAction::Count, global = true)]
+    pub verbose: u8,
+
+    #[command(subcommand)]
+    pub command: Commands,
+}
+
+#[derive(Subcommand)]
+pub enum Commands {
+    /// Log in and inspect authentication
+    #[command(subcommand)]
+    Auth(AuthCmd),
+    /// Work with spaces
+    #[command(subcommand)]
+    Space(SpaceCmd),
+    /// Work with boards
+    #[command(subcommand)]
+    Board(BoardCmd),
+    /// Work with cards
+    #[command(subcommand)]
+    Card(CardCmd),
+    /// Work with company tags
+    #[command(subcommand)]
+    Tag(TagCmd),
+    /// Work with card types
+    #[command(name = "card-type", subcommand)]
+    CardType(CardTypeCmd),
+    /// Raw API request (like `gh api`)
+    Api {
+        /// HTTP method: GET|POST|PATCH|PUT|DELETE
+        method: String,
+        /// Path starting with '/', query string included
+        path: String,
+        /// JSON request body
+        #[arg(long)]
+        data: Option<String>,
+    },
+    /// Generate shell completion script
+    Completion {
+        #[arg(value_enum)]
+        shell: Shell,
+    },
+    /// MCP server
+    #[command(subcommand)]
+    Mcp(McpCmd),
+}
+
+#[derive(Subcommand)]
+pub enum AuthCmd {
+    /// Verify credentials against /users/current and save config
+    Login {
+        /// Kaiten domain: <domain>.kaiten.ru
+        #[arg(long)]
+        domain: Option<String>,
+        /// API token (from your Kaiten profile)
+        #[arg(long)]
+        token: Option<String>,
+    },
+    /// Show current authentication info
+    Status,
+}
+
+#[derive(Subcommand)]
+pub enum SpaceCmd {
+    /// List spaces
+    List,
+}
+
+#[derive(Subcommand)]
+pub enum BoardCmd {
+    /// List boards of a space
+    List {
+        /// Space id (default: defaults.space from config)
+        #[arg(long)]
+        space: Option<u64>,
+    },
+    /// Show board columns and lanes
+    View { board_id: u64 },
+}
+
+#[derive(Subcommand)]
+pub enum CardCmd {
+    /// List cards
+    List {
+        /// Filter by space id
+        #[arg(long)]
+        space: Option<u64>,
+        /// Filter by board id
+        #[arg(long)]
+        board: Option<u64>,
+        /// Filter by column id
+        #[arg(long)]
+        column: Option<u64>,
+        /// Only cards where I am a member
+        #[arg(long)]
+        mine: bool,
+        /// Only cards where user <id> is a member
+        #[arg(long)]
+        member: Option<u64>,
+        /// Full-text search query
+        #[arg(long)]
+        query: Option<String>,
+        /// Filter by tag name
+        #[arg(long)]
+        tag: Option<String>,
+        /// Filter by card type id
+        #[arg(long = "type")]
+        type_id: Option<u64>,
+        /// Include only archived cards
+        #[arg(long)]
+        archived: bool,
+        /// Max number of cards
+        #[arg(long, default_value_t = 50)]
+        limit: u32,
+    },
+    /// Show one card (accepts id or browser URL)
+    View {
+        card: String,
+        /// Also fetch and print comments
+        #[arg(long)]
+        comments: bool,
+    },
+    /// Create a card
+    Create {
+        #[arg(long)]
+        title: String,
+        /// Board id (default: defaults.board from config)
+        #[arg(long)]
+        board: Option<u64>,
+        #[arg(long)]
+        column: Option<u64>,
+        #[arg(long)]
+        lane: Option<u64>,
+        #[arg(long)]
+        description: Option<String>,
+        #[arg(long = "type")]
+        type_id: Option<u64>,
+        /// Mark card as ASAP
+        #[arg(long)]
+        asap: bool,
+    },
+    /// Edit card fields
+    Edit {
+        card: String,
+        #[arg(long)]
+        title: Option<String>,
+        #[arg(long)]
+        description: Option<String>,
+        #[arg(long = "type")]
+        type_id: Option<u64>,
+        /// true|false
+        #[arg(long)]
+        asap: Option<bool>,
+    },
+    /// Move card to another column/lane/board
+    Move {
+        card: String,
+        #[arg(long)]
+        column: u64,
+        #[arg(long)]
+        lane: Option<u64>,
+        #[arg(long)]
+        board: Option<u64>,
+    },
+    /// Archive card
+    Archive { card: String },
+    /// Card members
+    #[command(subcommand)]
+    Member(CardMemberCmd),
+    /// Card comments
+    #[command(subcommand)]
+    Comment(CardCommentCmd),
+    /// Card checklists
+    #[command(subcommand)]
+    Checklist(CardChecklistCmd),
+    /// Card tags
+    #[command(subcommand)]
+    Tag(CardTagCmd),
+}
+
+#[derive(Subcommand)]
+pub enum CardMemberCmd {
+    /// Add member (user id or email)
+    Add { card: String, user: String },
+    /// Remove member (user id or email)
+    Remove { card: String, user: String },
+}
+
+#[derive(Subcommand)]
+pub enum CardCommentCmd {
+    /// Add a comment
+    Add {
+        card: String,
+        #[arg(long)]
+        body: String,
+    },
+    /// List comments
+    List { card: String },
+}
+
+#[derive(Subcommand)]
+pub enum CardChecklistCmd {
+    /// List checklists with items
+    List { card: String },
+    /// Add a checklist
+    Add {
+        card: String,
+        #[arg(long)]
+        name: String,
+    },
+    /// Checklist items
+    #[command(subcommand)]
+    Item(CardChecklistItemCmd),
+}
+
+#[derive(Subcommand)]
+pub enum CardChecklistItemCmd {
+    /// Add an item
+    Add {
+        card: String,
+        checklist_id: u64,
+        #[arg(long)]
+        text: String,
+    },
+    /// Check an item
+    Check {
+        card: String,
+        checklist_id: u64,
+        item_id: u64,
+    },
+    /// Uncheck an item
+    Uncheck {
+        card: String,
+        checklist_id: u64,
+        item_id: u64,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum CardTagCmd {
+    /// Add tag by name
+    Add { card: String, name: String },
+    /// Remove tag by name
+    Remove { card: String, name: String },
+}
+
+#[derive(Subcommand)]
+pub enum TagCmd {
+    /// List company tags
+    List,
+}
+
+#[derive(Subcommand)]
+pub enum CardTypeCmd {
+    /// List card types
+    List,
+}
+
+#[derive(Subcommand)]
+pub enum McpCmd {
+    /// Run MCP server on stdio
+    Serve,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum Shell {
+    Bash,
+    Zsh,
+    Fish,
+}

@@ -824,6 +824,7 @@ dependencies = [
  "insta",
  "kaiten-client",
  "predicates",
+ "reqwest",
  "rpassword",
  "serde",
  "serde_json",
