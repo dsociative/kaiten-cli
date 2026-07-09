@@ -1,0 +1,20 @@
+[
+  {
+    "id": 1110772,
+    "uid": "f9ba3ae1-6227-4036-82ec-412ba30556e7",
+    "name": "cli-test",
+    "color": 15,
+    "company_id": 398610,
+    "archived": false,
+    "created": "2026-07-09T15:18:07.303Z"
+  },
+  {
+    "id": 1110773,
+    "uid": "5b0a9a10-77aa-4bb3-9c44-d16273849a01",
+    "name": "backend",
+    "color": 7,
+    "company_id": 398610,
+    "archived": false,
+    "created": "2026-07-08T10:00:00.000Z"
+  }
+]

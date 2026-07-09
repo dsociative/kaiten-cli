@@ -1,0 +1,30 @@
+{
+  "id": 67089469,
+  "uid": "c78e313c-ab37-4456-9eb0-904681c4e309",
+  "title": "test card from cli",
+  "state": 1,
+  "condition": 1,
+  "board_id": 1826109,
+  "column_id": 6308511,
+  "created": "2026-07-09T15:17:59.905Z",
+  "updated": "2026-07-09T15:18:07.303Z",
+  "version": 4,
+  "comments_total": 1,
+  "tags": [
+    {
+      "id": 1110772,
+      "tag_id": 1110772,
+      "name": "cli-test",
+      "color": 15,
+      "card_id": 67089469,
+      "created": "2026-07-09T15:18:07.303Z"
+    },
+    {
+      "id": 2220001,
+      "name": "legacy-link",
+      "color": 3,
+      "card_id": 67089469,
+      "created": "2026-07-09T15:20:00.000Z"
+    }
+  ]
+}

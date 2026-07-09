@@ -1,0 +1,35 @@
+[
+  {
+    "id": 1,
+    "uid": "64792c05-0d0d-4b19-a3a6-d3c34b0a197c",
+    "name": "Card",
+    "color": 1,
+    "letter": "C",
+    "archived": false,
+    "company_id": null,
+    "suggest_fields": true,
+    "created": "2014-11-13T22:20:14.374Z"
+  },
+  {
+    "id": 692717,
+    "uid": "dc9a097b-eb33-48bd-89fe-56faee4f9cbb",
+    "name": "Feature",
+    "color": 2,
+    "letter": "F",
+    "archived": false,
+    "company_id": 398610,
+    "suggest_fields": true,
+    "created": "2026-07-09T15:13:27.790Z"
+  },
+  {
+    "id": 692718,
+    "uid": "38fd521d-7ab8-472a-978e-f0313732c5f2",
+    "name": "Bug",
+    "color": 3,
+    "letter": "B",
+    "archived": false,
+    "company_id": 398610,
+    "suggest_fields": true,
+    "created": "2026-07-09T15:13:27.813Z"
+  }
+]

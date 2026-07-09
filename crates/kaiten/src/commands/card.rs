@@ -1,6 +1,8 @@
 use kaiten_client::{CardFilter, CreateCard, KaitenClient, UpdateCard};
 
-use crate::cli::{CardChecklistCmd, CardChecklistItemCmd, CardCmd, CardCommentCmd, CardMemberCmd};
+use crate::cli::{
+    CardChecklistCmd, CardChecklistItemCmd, CardCmd, CardCommentCmd, CardMemberCmd, CardTagCmd,
+};
 use crate::config::Defaults;
 use crate::error::CliError;
 use crate::output;
@@ -477,7 +479,45 @@ pub async fn run(
                 } => set_item_checked(client, json, &card, checklist_id, item_id, false).await,
             },
         },
-        CardCmd::Tag(_) => Err(CliError::InvalidArg("not implemented yet".into())),
+        CardCmd::Tag(cmd) => match cmd {
+            CardTagCmd::Add { card, name } => {
+                let card_id = parse_card_ref(&card)?;
+                let tag = client.tags().add_to_card(card_id, &name).await?;
+                if json {
+                    return output::print_json(&tag);
+                }
+                println!("added tag {} ({}) to card {card_id}", tag.name, tag.id);
+                Ok(())
+            }
+            CardTagCmd::Remove { card, name } => {
+                let card_id = parse_card_ref(&card)?;
+                let card = client.cards().get(card_id).await?;
+                let Some(card_tag) = card.tags.iter().find(|t| t.name == name) else {
+                    let existing = if card.tags.is_empty() {
+                        "(none)".to_string()
+                    } else {
+                        card.tags
+                            .iter()
+                            .map(|t| t.name.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    };
+                    return Err(CliError::InvalidArg(format!(
+                        "card {card_id} has no tag `{name}`; existing tags: {existing}"
+                    )));
+                };
+                let tag_id = card_tag.tag_id.unwrap_or(card_tag.id);
+                client.tags().remove_from_card(card_id, tag_id).await?;
+                if json {
+                    return output::print_json(&serde_json::json!({
+                        "removed": true,
+                        "tag": name,
+                    }));
+                }
+                println!("removed tag {name} from card {card_id}");
+                Ok(())
+            }
+        },
     }
 }
 
