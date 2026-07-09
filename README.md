@@ -1,5 +1,11 @@
 # kaiten
 
+[![CI](https://github.com/dsociative/kaiten-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/dsociative/kaiten-cli/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/dsociative/kaiten-cli)](https://github.com/dsociative/kaiten-cli/releases)
+[![Crates.io](https://img.shields.io/crates/v/kaiten-cli.svg)](https://crates.io/crates/kaiten-cli)
+[![Downloads](https://img.shields.io/crates/d/kaiten-cli.svg)](https://crates.io/crates/kaiten-cli)
+[![License](https://img.shields.io/crates/l/kaiten-cli.svg)](https://github.com/dsociative/kaiten-cli#license)
+
 Command-line client and MCP server for the [Kaiten](https://kaiten.ru) tracker,
 in the spirit of `gh` / `glab`.
 
