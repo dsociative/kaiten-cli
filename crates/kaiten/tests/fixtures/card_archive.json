@@ -1,0 +1,23 @@
+{
+  "id": 67089469,
+  "uid": "c78e313c-ab37-4456-9eb0-904681c4e309",
+  "created": "2026-07-09T15:17:59.905Z",
+  "updated": "2026-07-09T15:19:00.000Z",
+  "archived": true,
+  "title": "test card from cli",
+  "description": "test **description**",
+  "asap": false,
+  "state": 1,
+  "condition": 2,
+  "board_id": 1826109,
+  "column_id": 6308511,
+  "lane_id": 2293584,
+  "owner_id": 1068514,
+  "type_id": 1,
+  "comments_total": 0,
+  "due_date": null,
+  "version": 3,
+  "source": "api",
+  "sort_order": 1.0689198905237203,
+  "estimate_workload": 0
+}

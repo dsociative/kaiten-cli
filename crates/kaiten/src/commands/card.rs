@@ -1,4 +1,4 @@
-use kaiten_client::{CardFilter, KaitenClient};
+use kaiten_client::{CardFilter, CreateCard, KaitenClient, UpdateCard};
 
 use crate::cli::CardCmd;
 use crate::config::Defaults;
@@ -137,6 +137,46 @@ fn print_card_details(card: &kaiten_client::Card) {
     }
 }
 
+fn print_card_kv(card: &kaiten_client::Card) {
+    let dash = || "-".to_string();
+    let mut table = output::table(&["FIELD", "VALUE"]);
+    table.add_row(vec!["id".to_string(), card.id.to_string()]);
+    table.add_row(vec!["title".to_string(), card.title.clone()]);
+    table.add_row(vec![
+        "board".to_string(),
+        card.board_id.map(|v| v.to_string()).unwrap_or_else(dash),
+    ]);
+    table.add_row(vec![
+        "column".to_string(),
+        card.column_id.map(|v| v.to_string()).unwrap_or_else(dash),
+    ]);
+    table.add_row(vec![
+        "lane".to_string(),
+        card.lane_id.map(|v| v.to_string()).unwrap_or_else(dash),
+    ]);
+    table.add_row(vec![
+        "type".to_string(),
+        card.type_id.map(|v| v.to_string()).unwrap_or_else(dash),
+    ]);
+    table.add_row(vec![
+        "asap".to_string(),
+        card.asap.map(|v| v.to_string()).unwrap_or_else(dash),
+    ]);
+    table.add_row(vec![
+        "condition".to_string(),
+        card.condition.map(|v| v.to_string()).unwrap_or_else(dash),
+    ]);
+    table.add_row(vec![
+        "updated".to_string(),
+        card.updated
+            .as_deref()
+            .and_then(|d| d.split('T').next())
+            .unwrap_or("-")
+            .to_string(),
+    ]);
+    println!("{table}");
+}
+
 pub async fn run(
     cmd: CardCmd,
     client: &KaitenClient,
@@ -255,10 +295,94 @@ pub async fn run(
             }
             Ok(())
         }
-        CardCmd::Create { .. }
-        | CardCmd::Edit { .. }
-        | CardCmd::Move { .. }
-        | CardCmd::Archive { .. } => Err(CliError::InvalidArg("not implemented yet".into())),
+        CardCmd::Create {
+            title,
+            board,
+            column,
+            lane,
+            description,
+            type_id,
+            asap,
+        } => {
+            let board_id = board.or(defaults.board).ok_or_else(|| {
+                CliError::InvalidArg("specify --board or set defaults.board in config".into())
+            })?;
+            let req = CreateCard {
+                board_id,
+                title,
+                column_id: column,
+                lane_id: lane,
+                description,
+                type_id,
+                asap: if asap { Some(true) } else { None },
+            };
+            let card = client.cards().create(&req).await?;
+            if json {
+                return output::print_json(&card);
+            }
+            print_card_kv(&card);
+            Ok(())
+        }
+        CardCmd::Edit {
+            card,
+            title,
+            description,
+            type_id,
+            asap,
+        } => {
+            let card_id = parse_card_ref(&card)?;
+            if title.is_none() && description.is_none() && type_id.is_none() && asap.is_none() {
+                return Err(CliError::InvalidArg(
+                    "nothing to edit: pass --title/--description/--type/--asap".into(),
+                ));
+            }
+            let req = UpdateCard {
+                title,
+                description,
+                type_id,
+                asap,
+                ..Default::default()
+            };
+            let card = client.cards().update(card_id, &req).await?;
+            if json {
+                return output::print_json(&card);
+            }
+            print_card_kv(&card);
+            Ok(())
+        }
+        CardCmd::Move {
+            card,
+            column,
+            lane,
+            board,
+        } => {
+            let card_id = parse_card_ref(&card)?;
+            let req = UpdateCard {
+                column_id: Some(column),
+                lane_id: lane,
+                board_id: board,
+                ..Default::default()
+            };
+            let card = client.cards().update(card_id, &req).await?;
+            if json {
+                return output::print_json(&card);
+            }
+            print_card_kv(&card);
+            Ok(())
+        }
+        CardCmd::Archive { card } => {
+            let card_id = parse_card_ref(&card)?;
+            let req = UpdateCard {
+                condition: Some(2),
+                ..Default::default()
+            };
+            let card = client.cards().update(card_id, &req).await?;
+            if json {
+                return output::print_json(&card);
+            }
+            print_card_kv(&card);
+            Ok(())
+        }
         CardCmd::Member(_) | CardCmd::Comment(_) | CardCmd::Checklist(_) | CardCmd::Tag(_) => {
             Err(CliError::InvalidArg("not implemented yet".into()))
         }
