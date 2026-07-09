@@ -60,6 +60,22 @@ impl FileConfig {
         toml::from_str(&body)
             .map_err(|err| CliError::Config(format!("invalid config {}: {err}", path.display())))
     }
+
+    /// Создаёт каталог, пишет config.toml с правами 0600 (unix).
+    pub fn save(&self) -> Result<(), CliError> {
+        let dir = Self::dir();
+        std::fs::create_dir_all(&dir)?;
+        let path = dir.join("config.toml");
+        let body = toml::to_string_pretty(self)
+            .map_err(|err| CliError::Config(format!("failed to serialize config: {err}")))?;
+        std::fs::write(&path, body)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))?;
+        }
+        Ok(())
+    }
 }
 
 pub fn resolve() -> Result<Resolved, CliError> {
