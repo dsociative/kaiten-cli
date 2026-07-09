@@ -238,7 +238,12 @@ impl KaitenMcp {
             limit: Some(p.limit.unwrap_or(50)),
             ..Default::default()
         };
-        let cards = self.client.cards().list(&filter).await.map_err(to_mcp_error)?;
+        let cards = self
+            .client
+            .cards()
+            .list(&filter)
+            .await
+            .map_err(to_mcp_error)?;
         json_result(&cards)
     }
 
@@ -249,7 +254,12 @@ impl KaitenMcp {
         &self,
         Parameters(p): Parameters<GetCardParams>,
     ) -> Result<CallToolResult, McpError> {
-        let card = self.client.cards().get(p.card_id).await.map_err(to_mcp_error)?;
+        let card = self
+            .client
+            .cards()
+            .get(p.card_id)
+            .await
+            .map_err(to_mcp_error)?;
         json_result(&card)
     }
 
@@ -274,7 +284,12 @@ impl KaitenMcp {
     ) -> Result<CallToolResult, McpError> {
         // GET /cards/{id}/checklists does not exist in the Kaiten API (405);
         // checklists come embedded in the full card.
-        let card = self.client.cards().get(p.card_id).await.map_err(to_mcp_error)?;
+        let card = self
+            .client
+            .cards()
+            .get(p.card_id)
+            .await
+            .map_err(to_mcp_error)?;
         json_result(&card.checklists)
     }
 
@@ -292,7 +307,12 @@ impl KaitenMcp {
             type_id: p.type_id,
             asap: p.asap,
         };
-        let card = self.client.cards().create(&req).await.map_err(to_mcp_error)?;
+        let card = self
+            .client
+            .cards()
+            .create(&req)
+            .await
+            .map_err(to_mcp_error)?;
         json_result(&card)
     }
 
@@ -461,10 +481,8 @@ mod tests {
     use super::{CreateCardParams, GetCardParams, KaitenMcp, ListCardsParams};
 
     const SPACES_FIXTURE: &str = include_str!("../../tests/fixtures/mcp_spaces.json");
-    const CARD_CREATE_FIXTURE: &str =
-        include_str!("../../tests/fixtures/mcp_card_create.json");
-    const USER_CURRENT_FIXTURE: &str =
-        include_str!("../../tests/fixtures/mcp_user_current.json");
+    const CARD_CREATE_FIXTURE: &str = include_str!("../../tests/fixtures/mcp_card_create.json");
+    const USER_CURRENT_FIXTURE: &str = include_str!("../../tests/fixtures/mcp_user_current.json");
 
     fn mcp_for(server: &MockServer) -> KaitenMcp {
         let client = KaitenClient::new(&server.uri(), "test-token").unwrap();

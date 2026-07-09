@@ -27,8 +27,6 @@ pub enum TokenSource {
 pub struct Resolved {
     pub base_url: String,
     pub token: String,
-    // Read starting with `auth status` (Task 11); unused until then.
-    #[allow(dead_code)]
     pub token_source: TokenSource,
     pub defaults: Defaults,
 }

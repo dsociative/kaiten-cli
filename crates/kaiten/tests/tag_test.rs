@@ -22,8 +22,7 @@ async fn card_tag_add_posts_name() {
         .and(header("Authorization", "Bearer test-token"))
         .and(body_json(serde_json::json!({"name": "cli-test"})))
         .respond_with(
-            ResponseTemplate::new(200)
-                .set_body_string(include_str!("fixtures/tag_added.json")),
+            ResponseTemplate::new(200).set_body_string(include_str!("fixtures/tag_added.json")),
         )
         .expect(1)
         .mount(&server)
@@ -163,8 +162,7 @@ async fn tag_list_renders_table() {
         .and(path("/tags"))
         .and(header("Authorization", "Bearer test-token"))
         .respond_with(
-            ResponseTemplate::new(200)
-                .set_body_string(include_str!("fixtures/tags_list.json")),
+            ResponseTemplate::new(200).set_body_string(include_str!("fixtures/tags_list.json")),
         )
         .expect(1)
         .mount(&server)
@@ -189,8 +187,7 @@ async fn tag_list_json_prints_models() {
     Mock::given(method("GET"))
         .and(path("/tags"))
         .respond_with(
-            ResponseTemplate::new(200)
-                .set_body_string(include_str!("fixtures/tags_list.json")),
+            ResponseTemplate::new(200).set_body_string(include_str!("fixtures/tags_list.json")),
         )
         .mount(&server)
         .await;

@@ -30,7 +30,14 @@ async fn comment_add_prints_created_id() {
         .await;
 
     kaiten(&server.uri(), tmp.path())
-        .args(["card", "comment", "add", "67089469", "--body", "hello from cli"])
+        .args([
+            "card",
+            "comment",
+            "add",
+            "67089469",
+            "--body",
+            "hello from cli",
+        ])
         .assert()
         .success()
         .stdout(predicate::str::contains("85523991"));
@@ -52,7 +59,13 @@ async fn comment_add_json_prints_model() {
 
     kaiten(&server.uri(), tmp.path())
         .args([
-            "--json", "card", "comment", "add", "67089469", "--body", "hello from cli",
+            "--json",
+            "card",
+            "comment",
+            "add",
+            "67089469",
+            "--body",
+            "hello from cli",
         ])
         .assert()
         .success()

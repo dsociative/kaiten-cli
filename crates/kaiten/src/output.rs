@@ -1,7 +1,5 @@
 use crate::error::CliError;
 
-// Called by command handlers starting with Task 11; unused until then.
-#[allow(dead_code)]
 pub fn print_json<T: serde::Serialize>(value: &T) -> Result<(), CliError> {
     println!("{}", serde_json::to_string_pretty(value)?);
     Ok(())
@@ -15,7 +13,6 @@ pub(crate) fn user_label(user: &kaiten_client::User) -> String {
         .unwrap_or_else(|| user.id.to_string())
 }
 
-#[allow(dead_code)]
 pub fn table(headers: &[&str]) -> comfy_table::Table {
     let mut table = comfy_table::Table::new();
     table.load_preset(comfy_table::presets::UTF8_BORDERS_ONLY);

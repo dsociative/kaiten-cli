@@ -433,7 +433,11 @@ pub async fn run(
                 for checklist in &card.checklists {
                     println!("{} ({})", checklist.name, checklist.id);
                     for item in &checklist.items {
-                        let mark = if item.checked.unwrap_or(false) { "x" } else { " " };
+                        let mark = if item.checked.unwrap_or(false) {
+                            "x"
+                        } else {
+                            " "
+                        };
                         println!("  [{mark}] {} {}", item.id, item.text);
                     }
                 }

@@ -22,8 +22,7 @@ async fn member_add_by_id_posts_user_id() {
         .and(header("Authorization", "Bearer test-token"))
         .and(body_json(serde_json::json!({"user_id": 1068514})))
         .respond_with(
-            ResponseTemplate::new(200)
-                .set_body_string(include_str!("fixtures/member_added.json")),
+            ResponseTemplate::new(200).set_body_string(include_str!("fixtures/member_added.json")),
         )
         .expect(1)
         .mount(&server)
@@ -47,8 +46,7 @@ async fn member_add_by_email_resolves_via_users_list() {
         .and(path("/users"))
         .and(header("Authorization", "Bearer test-token"))
         .respond_with(
-            ResponseTemplate::new(200)
-                .set_body_string(include_str!("fixtures/member_users.json")),
+            ResponseTemplate::new(200).set_body_string(include_str!("fixtures/member_users.json")),
         )
         .expect(1)
         .mount(&server)
@@ -58,8 +56,7 @@ async fn member_add_by_email_resolves_via_users_list() {
         .and(path("/cards/67089469/members"))
         .and(body_json(serde_json::json!({"user_id": 555001})))
         .respond_with(
-            ResponseTemplate::new(200)
-                .set_body_string(include_str!("fixtures/member_added.json")),
+            ResponseTemplate::new(200).set_body_string(include_str!("fixtures/member_added.json")),
         )
         .expect(1)
         .mount(&server)
@@ -89,8 +86,7 @@ async fn member_add_json_prints_model() {
     Mock::given(method("POST"))
         .and(path("/cards/67089469/members"))
         .respond_with(
-            ResponseTemplate::new(200)
-                .set_body_string(include_str!("fixtures/member_added.json")),
+            ResponseTemplate::new(200).set_body_string(include_str!("fixtures/member_added.json")),
         )
         .mount(&server)
         .await;
@@ -110,8 +106,7 @@ async fn member_add_unknown_email_fails_with_invalid_arg() {
     Mock::given(method("GET"))
         .and(path("/users"))
         .respond_with(
-            ResponseTemplate::new(200)
-                .set_body_string(include_str!("fixtures/member_users.json")),
+            ResponseTemplate::new(200).set_body_string(include_str!("fixtures/member_users.json")),
         )
         .mount(&server)
         .await;

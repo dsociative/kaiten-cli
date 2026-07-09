@@ -71,7 +71,11 @@ impl McpProc {
             }
         });
 
-        McpProc { child, stdin, lines: rx }
+        McpProc {
+            child,
+            stdin,
+            lines: rx,
+        }
     }
 
     fn send(&mut self, msg: &serde_json::Value) {
@@ -144,7 +148,10 @@ fn mcp_stdio_initialize_and_list_all_16_tools() {
     let names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
     assert_eq!(names.len(), 16, "expected exactly 16 tools, got: {names:?}");
     for expected in EXPECTED_TOOLS {
-        assert!(names.contains(&expected), "missing tool `{expected}`, got: {names:?}");
+        assert!(
+            names.contains(&expected),
+            "missing tool `{expected}`, got: {names:?}"
+        );
     }
 
     for tool in tools {
@@ -152,6 +159,9 @@ fn mcp_stdio_initialize_and_list_all_16_tools() {
             tool["description"].as_str().is_some_and(|d| !d.is_empty()),
             "tool without description: {tool}"
         );
-        assert!(tool["inputSchema"].is_object(), "tool without inputSchema: {tool}");
+        assert!(
+            tool["inputSchema"].is_object(),
+            "tool without inputSchema: {tool}"
+        );
     }
 }

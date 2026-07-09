@@ -102,7 +102,14 @@ async fn checklist_item_add_posts_text() {
 
     kaiten(&server.uri(), tmp.path())
         .args([
-            "card", "checklist", "item", "add", "67089469", "11747430", "--text", "first item",
+            "card",
+            "checklist",
+            "item",
+            "add",
+            "67089469",
+            "11747430",
+            "--text",
+            "first item",
         ])
         .assert()
         .success()
@@ -128,7 +135,13 @@ async fn checklist_item_check_sends_checked_true() {
 
     kaiten(&server.uri(), tmp.path())
         .args([
-            "card", "checklist", "item", "check", "67089469", "11747430", "65658564",
+            "card",
+            "checklist",
+            "item",
+            "check",
+            "67089469",
+            "11747430",
+            "65658564",
         ])
         .assert()
         .success()
@@ -154,7 +167,13 @@ async fn checklist_item_uncheck_sends_checked_false() {
 
     kaiten(&server.uri(), tmp.path())
         .args([
-            "card", "checklist", "item", "uncheck", "67089469", "11747430", "65658564",
+            "card",
+            "checklist",
+            "item",
+            "uncheck",
+            "67089469",
+            "11747430",
+            "65658564",
         ])
         .assert()
         .success()

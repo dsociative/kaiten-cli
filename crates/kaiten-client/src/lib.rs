@@ -6,7 +6,7 @@ mod error;
 pub mod api;
 pub mod models;
 
+pub use api::cards::{CardFilter, CreateCard, UpdateCard};
 pub use client::KaitenClient;
 pub use error::{KaitenError, Result};
 pub use models::*;
-pub use api::cards::{CardFilter, CreateCard, UpdateCard};

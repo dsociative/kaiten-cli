@@ -71,7 +71,10 @@ async fn list_sends_filter_query_params_and_parses_list_card() {
     assert!(board.columns.is_empty());
     assert_eq!(card.column.as_ref().unwrap().column_type, Some(1));
     assert_eq!(card.card_type.as_ref().unwrap().name, "Card");
-    assert_eq!(card.owner.as_ref().unwrap().email.as_deref(), Some("user@example.com"));
+    assert_eq!(
+        card.owner.as_ref().unwrap().email.as_deref(),
+        Some("user@example.com")
+    );
 }
 
 #[tokio::test]
@@ -162,7 +165,9 @@ async fn update_with_column_id_is_move_and_omits_other_fields() {
     Mock::given(method("PATCH"))
         .and(path("/cards/67089469"))
         .and(header("Authorization", "Bearer test-token"))
-        .and(body_partial_json(serde_json::json!({ "column_id": 6308512 })))
+        .and(body_partial_json(
+            serde_json::json!({ "column_id": 6308512 }),
+        ))
         .and(BodyLacksKey("title"))
         .and(BodyLacksKey("description"))
         .and(BodyLacksKey("board_id"))
