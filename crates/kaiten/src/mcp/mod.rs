@@ -14,9 +14,29 @@ pub struct KaitenMcp {
     tool_router: ToolRouter<Self>,
 }
 
-fn to_mcp_error(err: KaitenError) -> McpError {
-    // RateLimited already renders as "rate limited, retry after Ns".
-    McpError::internal_error(err.to_string(), None)
+/// Map a Kaiten API/network failure to a tool-level error result.
+///
+/// Per MCP convention this is `Ok(CallToolResult { is_error: true, .. })`,
+/// not a JSON-RPC protocol error (`Err(McpError)`): the request was valid
+/// and routed correctly, executing it against the Kaiten API just failed.
+/// The client renders `content` to the model, so `err.to_string()` (e.g.
+/// "API error 403: Forbidden" or "rate limited, retry after 5s") reaches it
+/// verbatim. Parameter-validation/serialization errors from the framework
+/// stay protocol errors — this helper is only for API-call failures.
+fn error_result(err: KaitenError) -> CallToolResult {
+    CallToolResult::error(vec![ContentBlock::text(err.to_string())])
+}
+
+/// Unwrap a `Result<T, KaitenError>` produced by a client call inside a tool
+/// method, returning early with `Ok(error_result(e))` on failure (see
+/// `error_result` for why this is `Ok`, not `Err`, at the tool boundary).
+macro_rules! try_api {
+    ($e:expr) => {
+        match $e {
+            Ok(v) => v,
+            Err(e) => return Ok(error_result(e)),
+        }
+    };
 }
 
 fn json_result<T: serde::Serialize>(value: &T) -> Result<CallToolResult, McpError> {
@@ -172,13 +192,13 @@ impl KaitenMcp {
 
     #[tool(description = "Get the current authenticated Kaiten user (id, name, email).")]
     async fn current_user(&self) -> Result<CallToolResult, McpError> {
-        let user = self.client.users().current().await.map_err(to_mcp_error)?;
+        let user = try_api!(self.client.users().current().await);
         json_result(&user)
     }
 
     #[tool(description = "List all Kaiten spaces visible to the current user.")]
     async fn list_spaces(&self) -> Result<CallToolResult, McpError> {
-        let spaces = self.client.spaces().list().await.map_err(to_mcp_error)?;
+        let spaces = try_api!(self.client.spaces().list().await);
         json_result(&spaces)
     }
 
@@ -187,12 +207,7 @@ impl KaitenMcp {
         &self,
         Parameters(p): Parameters<ListBoardsParams>,
     ) -> Result<CallToolResult, McpError> {
-        let boards = self
-            .client
-            .boards()
-            .list(p.space_id)
-            .await
-            .map_err(to_mcp_error)?;
+        let boards = try_api!(self.client.boards().list(p.space_id).await);
         json_result(&boards)
     }
 
@@ -203,12 +218,7 @@ impl KaitenMcp {
         &self,
         Parameters(p): Parameters<GetBoardParams>,
     ) -> Result<CallToolResult, McpError> {
-        let board = self
-            .client
-            .boards()
-            .get(p.board_id)
-            .await
-            .map_err(to_mcp_error)?;
+        let board = try_api!(self.client.boards().get(p.board_id).await);
         json_result(&board)
     }
 
@@ -221,7 +231,7 @@ impl KaitenMcp {
     ) -> Result<CallToolResult, McpError> {
         let mut member_ids: Vec<u64> = p.member_id.into_iter().collect();
         if p.mine == Some(true) {
-            let me = self.client.users().current().await.map_err(to_mcp_error)?;
+            let me = try_api!(self.client.users().current().await);
             if !member_ids.contains(&me.id) {
                 member_ids.push(me.id);
             }
@@ -238,12 +248,7 @@ impl KaitenMcp {
             limit: Some(p.limit.unwrap_or(50)),
             ..Default::default()
         };
-        let cards = self
-            .client
-            .cards()
-            .list(&filter)
-            .await
-            .map_err(to_mcp_error)?;
+        let cards = try_api!(self.client.cards().list(&filter).await);
         json_result(&cards)
     }
 
@@ -254,12 +259,7 @@ impl KaitenMcp {
         &self,
         Parameters(p): Parameters<GetCardParams>,
     ) -> Result<CallToolResult, McpError> {
-        let card = self
-            .client
-            .cards()
-            .get(p.card_id)
-            .await
-            .map_err(to_mcp_error)?;
+        let card = try_api!(self.client.cards().get(p.card_id).await);
         json_result(&card)
     }
 
@@ -268,12 +268,7 @@ impl KaitenMcp {
         &self,
         Parameters(p): Parameters<ListCommentsParams>,
     ) -> Result<CallToolResult, McpError> {
-        let comments = self
-            .client
-            .comments()
-            .list(p.card_id)
-            .await
-            .map_err(to_mcp_error)?;
+        let comments = try_api!(self.client.comments().list(p.card_id).await);
         json_result(&comments)
     }
 
@@ -284,12 +279,7 @@ impl KaitenMcp {
     ) -> Result<CallToolResult, McpError> {
         // GET /cards/{id}/checklists does not exist in the Kaiten API (405);
         // checklists come embedded in the full card.
-        let card = self
-            .client
-            .cards()
-            .get(p.card_id)
-            .await
-            .map_err(to_mcp_error)?;
+        let card = try_api!(self.client.cards().get(p.card_id).await);
         json_result(&card.checklists)
     }
 
@@ -307,12 +297,7 @@ impl KaitenMcp {
             type_id: p.type_id,
             asap: p.asap,
         };
-        let card = self
-            .client
-            .cards()
-            .create(&req)
-            .await
-            .map_err(to_mcp_error)?;
+        let card = try_api!(self.client.cards().create(&req).await);
         json_result(&card)
     }
 
@@ -330,12 +315,7 @@ impl KaitenMcp {
             asap: p.asap,
             ..Default::default()
         };
-        let card = self
-            .client
-            .cards()
-            .update(p.card_id, &req)
-            .await
-            .map_err(to_mcp_error)?;
+        let card = try_api!(self.client.cards().update(p.card_id, &req).await);
         json_result(&card)
     }
 
@@ -352,12 +332,7 @@ impl KaitenMcp {
             board_id: p.board_id,
             ..Default::default()
         };
-        let card = self
-            .client
-            .cards()
-            .update(p.card_id, &req)
-            .await
-            .map_err(to_mcp_error)?;
+        let card = try_api!(self.client.cards().update(p.card_id, &req).await);
         json_result(&card)
     }
 
@@ -366,12 +341,7 @@ impl KaitenMcp {
         &self,
         Parameters(p): Parameters<CardMemberParams>,
     ) -> Result<CallToolResult, McpError> {
-        let member = self
-            .client
-            .members()
-            .add(p.card_id, p.user_id)
-            .await
-            .map_err(to_mcp_error)?;
+        let member = try_api!(self.client.members().add(p.card_id, p.user_id).await);
         json_result(&member)
     }
 
@@ -380,11 +350,7 @@ impl KaitenMcp {
         &self,
         Parameters(p): Parameters<CardMemberParams>,
     ) -> Result<CallToolResult, McpError> {
-        self.client
-            .members()
-            .remove(p.card_id, p.user_id)
-            .await
-            .map_err(to_mcp_error)?;
+        try_api!(self.client.members().remove(p.card_id, p.user_id).await);
         json_result(&serde_json::json!({ "removed": true, "user_id": p.user_id }))
     }
 
@@ -393,12 +359,7 @@ impl KaitenMcp {
         &self,
         Parameters(p): Parameters<AddCommentParams>,
     ) -> Result<CallToolResult, McpError> {
-        let comment = self
-            .client
-            .comments()
-            .add(p.card_id, &p.text)
-            .await
-            .map_err(to_mcp_error)?;
+        let comment = try_api!(self.client.comments().add(p.card_id, &p.text).await);
         json_result(&comment)
     }
 
@@ -407,12 +368,12 @@ impl KaitenMcp {
         &self,
         Parameters(p): Parameters<AddChecklistItemParams>,
     ) -> Result<CallToolResult, McpError> {
-        let item = self
-            .client
-            .checklists()
-            .add_item(p.card_id, p.checklist_id, &p.text)
-            .await
-            .map_err(to_mcp_error)?;
+        let item = try_api!(
+            self.client
+                .checklists()
+                .add_item(p.card_id, p.checklist_id, &p.text)
+                .await
+        );
         json_result(&item)
     }
 
@@ -421,12 +382,12 @@ impl KaitenMcp {
         &self,
         Parameters(p): Parameters<SetChecklistItemCheckedParams>,
     ) -> Result<CallToolResult, McpError> {
-        let item = self
-            .client
-            .checklists()
-            .set_item_checked(p.card_id, p.checklist_id, p.item_id, p.checked)
-            .await
-            .map_err(to_mcp_error)?;
+        let item = try_api!(
+            self.client
+                .checklists()
+                .set_item_checked(p.card_id, p.checklist_id, p.item_id, p.checked)
+                .await
+        );
         json_result(&item)
     }
 }
@@ -525,14 +486,40 @@ mod tests {
             .await;
 
         let mcp = mcp_for(&server);
-        let err = mcp
+        let result = mcp
             .get_card(Parameters(GetCardParams { card_id: 999 }))
             .await
-            .unwrap_err();
+            .unwrap();
+        assert_eq!(result.is_error, Some(true));
+        let text = tool_text(&result);
         assert!(
-            err.message.contains("API error 403"),
-            "expected KaitenError text in tool error, got: {}",
-            err.message
+            text.contains("API error 403"),
+            "expected KaitenError text in tool error content, got: {text}"
+        );
+    }
+
+    #[tokio::test]
+    async fn get_card_exhausted_429_maps_to_tool_error_with_rate_limit_text() {
+        let server = MockServer::start().await;
+        // Reset=0 keeps the retry_wait_secs sleeps at 0s so this test stays fast.
+        // 1 initial request + 3 retries = 4 requests before giving up.
+        Mock::given(method("GET"))
+            .and(path("/cards/999"))
+            .respond_with(ResponseTemplate::new(429).insert_header("X-RateLimit-Reset", "0"))
+            .expect(4)
+            .mount(&server)
+            .await;
+
+        let mcp = mcp_for(&server);
+        let result = mcp
+            .get_card(Parameters(GetCardParams { card_id: 999 }))
+            .await
+            .unwrap();
+        assert_eq!(result.is_error, Some(true));
+        let text = tool_text(&result);
+        assert!(
+            text.contains("rate limited, retry after"),
+            "expected RateLimited text in tool error content, got: {text}"
         );
     }
 
