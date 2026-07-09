@@ -110,6 +110,8 @@ kaiten board list --space <id>
 kaiten board view <id>                # колонки и дорожки с ID (нужны для move)
 kaiten card list [--board] [--space] [--column] [--mine] [--member] [--query]
                  [--tag] [--type] [--archived] [--limit]
+                 # по умолчанию только живые карточки (archived=false);
+                 # --archived — только архивные. То же для MCP list_cards.
 kaiten card view <id|url> [--comments]
 kaiten card create --board <id> --title <t> [--column] [--lane] [--description] [--type] [--asap]
 kaiten card edit <id> [--title] [--description] [--type] [--asap]
