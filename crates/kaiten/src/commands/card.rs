@@ -1,6 +1,6 @@
 use kaiten_client::{CardFilter, CreateCard, KaitenClient, UpdateCard};
 
-use crate::cli::{CardCmd, CardCommentCmd, CardMemberCmd};
+use crate::cli::{CardChecklistCmd, CardChecklistItemCmd, CardCmd, CardCommentCmd, CardMemberCmd};
 use crate::config::Defaults;
 use crate::error::CliError;
 use crate::output;
@@ -419,10 +419,90 @@ pub async fn run(
                 Ok(())
             }
         },
-        CardCmd::Checklist(_) | CardCmd::Tag(_) => {
-            Err(CliError::InvalidArg("not implemented yet".into()))
-        }
+        CardCmd::Checklist(cmd) => match cmd {
+            CardChecklistCmd::List { card } => {
+                let card_id = parse_card_ref(&card)?;
+                let card = client.cards().get(card_id).await?;
+                if json {
+                    return output::print_json(&card.checklists);
+                }
+                if card.checklists.is_empty() {
+                    println!("no checklists on card {card_id}");
+                    return Ok(());
+                }
+                for checklist in &card.checklists {
+                    println!("{} ({})", checklist.name, checklist.id);
+                    for item in &checklist.items {
+                        let mark = if item.checked.unwrap_or(false) { "x" } else { " " };
+                        println!("  [{mark}] {} {}", item.id, item.text);
+                    }
+                }
+                Ok(())
+            }
+            CardChecklistCmd::Add { card, name } => {
+                let card_id = parse_card_ref(&card)?;
+                let checklist = client.checklists().add(card_id, &name).await?;
+                if json {
+                    return output::print_json(&checklist);
+                }
+                println!("created checklist {}", checklist.id);
+                Ok(())
+            }
+            CardChecklistCmd::Item(cmd) => match cmd {
+                CardChecklistItemCmd::Add {
+                    card,
+                    checklist_id,
+                    text,
+                } => {
+                    let card_id = parse_card_ref(&card)?;
+                    let item = client
+                        .checklists()
+                        .add_item(card_id, checklist_id, &text)
+                        .await?;
+                    if json {
+                        return output::print_json(&item);
+                    }
+                    println!("created item {}", item.id);
+                    Ok(())
+                }
+                CardChecklistItemCmd::Check {
+                    card,
+                    checklist_id,
+                    item_id,
+                } => set_item_checked(client, json, &card, checklist_id, item_id, true).await,
+                CardChecklistItemCmd::Uncheck {
+                    card,
+                    checklist_id,
+                    item_id,
+                } => set_item_checked(client, json, &card, checklist_id, item_id, false).await,
+            },
+        },
+        CardCmd::Tag(_) => Err(CliError::InvalidArg("not implemented yet".into())),
     }
+}
+
+async fn set_item_checked(
+    client: &KaitenClient,
+    json: bool,
+    card: &str,
+    checklist_id: u64,
+    item_id: u64,
+    checked: bool,
+) -> Result<(), CliError> {
+    let card_id = parse_card_ref(card)?;
+    let item = client
+        .checklists()
+        .set_item_checked(card_id, checklist_id, item_id, checked)
+        .await?;
+    if json {
+        return crate::output::print_json(&item);
+    }
+    println!(
+        "item {} {}",
+        item.id,
+        if checked { "checked" } else { "unchecked" }
+    );
+    Ok(())
 }
 
 /// Resolve a `<user>` CLI argument into a user id.

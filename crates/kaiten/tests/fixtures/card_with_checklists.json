@@ -1,0 +1,56 @@
+{
+  "id": 67089469,
+  "uid": "c78e313c-ab37-4456-9eb0-904681c4e309",
+  "title": "test card from cli",
+  "description": "test **description**",
+  "state": 1,
+  "condition": 1,
+  "board_id": 1826109,
+  "column_id": 6308511,
+  "lane_id": 2293584,
+  "type_id": 1,
+  "owner_id": 1068514,
+  "created": "2026-07-09T15:17:59.905Z",
+  "updated": "2026-07-09T15:18:07.303Z",
+  "version": 3,
+  "sort_order": 1.0689198905237203,
+  "comments_total": 1,
+  "goals_total": 2,
+  "goals_done": 1,
+  "checklists": [
+    {
+      "id": 11747430,
+      "uid": "19d5b8ab-1baf-4537-8d42-5578949e75dd",
+      "name": "todo",
+      "created": "2026-07-09T15:18:04.519Z",
+      "updated": "2026-07-09T15:18:04.519Z",
+      "sort_order": 1.1522949931390465,
+      "card_id": 67089469,
+      "checklist_id": 11747430,
+      "items": [
+        {
+          "id": 65658564,
+          "uid": "700601dd-9e37-4103-95d1-28edb55ff2df",
+          "text": "first item",
+          "checked": true,
+          "sort_order": 1.7468834610088972,
+          "checklist_id": 11747430,
+          "checker_id": 1068514,
+          "checked_at": "2026-07-09T15:18:05.989Z",
+          "deleted": false
+        },
+        {
+          "id": 65658565,
+          "uid": "8a1c0f2e-4b4c-4d3f-9a56-0c9d1a2b3c4d",
+          "text": "second item",
+          "checked": false,
+          "sort_order": 2.5,
+          "checklist_id": 11747430,
+          "checker_id": null,
+          "checked_at": null,
+          "deleted": false
+        }
+      ]
+    }
+  ]
+}
