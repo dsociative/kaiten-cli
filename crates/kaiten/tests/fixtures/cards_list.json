@@ -1,0 +1,98 @@
+[
+  {
+    "id": 67089469,
+    "uid": "c78e313c-ab37-4456-9eb0-904681c4e309",
+    "created": "2026-07-09T15:17:59.905Z",
+    "updated": "2026-07-09T15:17:59.905Z",
+    "archived": false,
+    "title": "test card from cli",
+    "asap": false,
+    "due_date": null,
+    "state": 1,
+    "condition": 1,
+    "board_id": 1826109,
+    "column_id": 6308511,
+    "lane_id": 2293584,
+    "owner_id": 1068514,
+    "type_id": 1,
+    "comments_total": 0,
+    "sort_order": 1.0689198905237203,
+    "version": 1,
+    "source": "api",
+    "column": {
+      "id": 6308511,
+      "title": "To Do",
+      "sort_order": 1,
+      "type": 1,
+      "board_id": 1826109
+    },
+    "lane": {
+      "id": 2293584,
+      "title": "Default Lane",
+      "sort_order": 1,
+      "board_id": 1826109
+    },
+    "type": {
+      "id": 1,
+      "name": "Card",
+      "color": 1,
+      "letter": "C",
+      "archived": false
+    },
+    "owner": {
+      "id": 1068514,
+      "uid": "0abd61ea-9dc5-40eb-b0a9-0d452ba1d8a6",
+      "full_name": "dxmuser",
+      "username": "dxmuser",
+      "email": "user@example.com"
+    }
+  },
+  {
+    "id": 67089470,
+    "uid": "d78e313c-ab37-4456-9eb0-904681c4e310",
+    "created": "2026-07-09T16:02:11.001Z",
+    "updated": "2026-07-10T09:30:00.123Z",
+    "archived": false,
+    "title": "urgent bugfix",
+    "asap": true,
+    "due_date": null,
+    "state": 2,
+    "condition": 1,
+    "board_id": 1826109,
+    "column_id": 6308512,
+    "lane_id": 2293584,
+    "owner_id": 1068514,
+    "type_id": 1,
+    "comments_total": 2,
+    "sort_order": 2.5,
+    "version": 4,
+    "source": "web",
+    "column": {
+      "id": 6308512,
+      "title": "In Progress",
+      "sort_order": 2,
+      "type": 2,
+      "board_id": 1826109
+    },
+    "lane": {
+      "id": 2293584,
+      "title": "Default Lane",
+      "sort_order": 1,
+      "board_id": 1826109
+    },
+    "type": {
+      "id": 1,
+      "name": "Card",
+      "color": 1,
+      "letter": "C",
+      "archived": false
+    },
+    "owner": {
+      "id": 1068514,
+      "uid": "0abd61ea-9dc5-40eb-b0a9-0d452ba1d8a6",
+      "full_name": "dxmuser",
+      "username": "dxmuser",
+      "email": "user@example.com"
+    }
+  }
+]
