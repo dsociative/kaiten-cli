@@ -51,6 +51,12 @@ impl KaitenClient {
         })
     }
 
+    /// Base API URL this client talks to,
+    /// e.g. "https://mycompany.kaiten.ru/api/latest".
+    pub fn base_url(&self) -> &url::Url {
+        &self.base_url
+    }
+
     /// Raw request for `kaiten api`: `path` starts with "/", query is already in `path`.
     pub async fn raw(
         &self,

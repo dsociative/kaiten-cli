@@ -1,3 +1,5 @@
+mod projections;
+
 use std::sync::Arc;
 
 use kaiten_client::{CardFilter, CreateCard, KaitenClient, KaitenError, UpdateCard};
@@ -7,10 +9,17 @@ use rmcp::model::{CallToolResult, ContentBlock, ServerCapabilities, ServerInfo};
 use rmcp::{ErrorData as McpError, ServerHandler, tool, tool_handler, tool_router};
 
 use crate::error::CliError;
+use projections::{
+    CardDetail, CardSummary, ChecklistItemView, ChecklistView, CommentResult, CommentView,
+    MemberView, MutationResult,
+};
 
 #[derive(Clone)]
 pub struct KaitenMcp {
     client: Arc<KaitenClient>,
+    /// Web origin for short card links, e.g. "https://mycompany.kaiten.ru"
+    /// (the API base URL without the `/api/latest` path).
+    web_base: String,
     tool_router: ToolRouter<Self>,
 }
 
@@ -39,9 +48,11 @@ macro_rules! try_api {
     };
 }
 
+/// Compact (non-pretty) serialization: tool output is agent context,
+/// indentation would only inflate it.
 fn json_result<T: serde::Serialize>(value: &T) -> Result<CallToolResult, McpError> {
-    let text = serde_json::to_string_pretty(value)
-        .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+    let text =
+        serde_json::to_string(value).map_err(|e| McpError::internal_error(e.to_string(), None))?;
     Ok(CallToolResult::success(vec![ContentBlock::text(text)]))
 }
 
@@ -188,8 +199,10 @@ pub struct SetChecklistItemCheckedParams {
 #[tool_router]
 impl KaitenMcp {
     pub fn new(client: Arc<KaitenClient>) -> Self {
+        let web_base = client.base_url().origin().ascii_serialization();
         Self {
             client,
+            web_base,
             tool_router: Self::tool_router(),
         }
     }
@@ -227,7 +240,7 @@ impl KaitenMcp {
     }
 
     #[tool(
-        description = "Search and list cards with optional filters. Returned cards have no description/members/checklists; call get_card for full details."
+        description = "Search and list cards with optional filters. Returns compact summaries (id, title, column, state, counts); call get_card for full details."
     )]
     async fn list_cards(
         &self,
@@ -253,18 +266,19 @@ impl KaitenMcp {
             ..Default::default()
         };
         let cards = try_api!(self.client.cards().list(&filter).await);
-        json_result(&cards)
+        let summaries: Vec<CardSummary> = cards.iter().map(CardSummary::from).collect();
+        json_result(&summaries)
     }
 
     #[tool(
-        description = "Get a full card by id: description, members, tags, checklists with items, custom properties."
+        description = "Get a full card by id: description, members, tags, checklists, custom properties, linked cards (children/parents), blockers and attached files. For the raw API JSON use the CLI (kaiten card view --json)."
     )]
     async fn get_card(
         &self,
         Parameters(p): Parameters<GetCardParams>,
     ) -> Result<CallToolResult, McpError> {
         let card = try_api!(self.client.cards().get(p.card_id).await);
-        json_result(&card)
+        json_result(&CardDetail::from(&card))
     }
 
     #[tool(description = "List all comments of a card.")]
@@ -273,7 +287,8 @@ impl KaitenMcp {
         Parameters(p): Parameters<ListCommentsParams>,
     ) -> Result<CallToolResult, McpError> {
         let comments = try_api!(self.client.comments().list(p.card_id).await);
-        json_result(&comments)
+        let views: Vec<CommentView> = comments.iter().map(CommentView::from).collect();
+        json_result(&views)
     }
 
     #[tool(description = "List checklists of a card, including their items.")]
@@ -284,10 +299,13 @@ impl KaitenMcp {
         // GET /cards/{id}/checklists does not exist in the Kaiten API (405);
         // checklists come embedded in the full card.
         let card = try_api!(self.client.cards().get(p.card_id).await);
-        json_result(&card.checklists)
+        let views: Vec<ChecklistView> = card.checklists.iter().map(ChecklistView::from).collect();
+        json_result(&views)
     }
 
-    #[tool(description = "Create a new card on a board. Returns the created card as JSON.")]
+    #[tool(
+        description = "Create a new card on a board. Returns {id, url, title, column}; call get_card for full details."
+    )]
     async fn create_card(
         &self,
         Parameters(p): Parameters<CreateCardParams>,
@@ -302,7 +320,7 @@ impl KaitenMcp {
             asap: p.asap,
         };
         let card = try_api!(self.client.cards().create(&req).await);
-        json_result(&card)
+        json_result(&MutationResult::new(&card, &self.web_base))
     }
 
     #[tool(
@@ -320,7 +338,7 @@ impl KaitenMcp {
             ..Default::default()
         };
         let card = try_api!(self.client.cards().update(p.card_id, &req).await);
-        json_result(&card)
+        json_result(&MutationResult::new(&card, &self.web_base))
     }
 
     #[tool(
@@ -337,7 +355,7 @@ impl KaitenMcp {
             ..Default::default()
         };
         let card = try_api!(self.client.cards().update(p.card_id, &req).await);
-        json_result(&card)
+        json_result(&MutationResult::new(&card, &self.web_base))
     }
 
     #[tool(description = "Add a user to the card members by user id.")]
@@ -346,7 +364,7 @@ impl KaitenMcp {
         Parameters(p): Parameters<CardMemberParams>,
     ) -> Result<CallToolResult, McpError> {
         let member = try_api!(self.client.members().add(p.card_id, p.user_id).await);
-        json_result(&member)
+        json_result(&MemberView::from(&member))
     }
 
     #[tool(description = "Remove a user from the card members by user id.")]
@@ -358,13 +376,15 @@ impl KaitenMcp {
         json_result(&serde_json::json!({ "removed": true, "user_id": p.user_id }))
     }
 
-    #[tool(description = "Add a comment to a card.")]
+    #[tool(
+        description = "Add a comment to a card. Returns {id, created} — the text is not echoed back."
+    )]
     async fn add_comment(
         &self,
         Parameters(p): Parameters<AddCommentParams>,
     ) -> Result<CallToolResult, McpError> {
         let comment = try_api!(self.client.comments().add(p.card_id, &p.text).await);
-        json_result(&comment)
+        json_result(&CommentResult::from(&comment))
     }
 
     #[tool(description = "Add an item to an existing checklist on a card.")]
@@ -378,7 +398,7 @@ impl KaitenMcp {
                 .add_item(p.card_id, p.checklist_id, &p.text)
                 .await
         );
-        json_result(&item)
+        json_result(&ChecklistItemView::from(&item))
     }
 
     #[tool(description = "Check or uncheck a checklist item on a card.")]
@@ -392,7 +412,7 @@ impl KaitenMcp {
                 .set_item_checked(p.card_id, p.checklist_id, p.item_id, p.checked)
                 .await
         );
-        json_result(&item)
+        json_result(&ChecklistItemView::from(&item))
     }
 }
 
@@ -448,6 +468,7 @@ mod tests {
     const SPACES_FIXTURE: &str = include_str!("../../tests/fixtures/mcp_spaces.json");
     const CARD_CREATE_FIXTURE: &str = include_str!("../../tests/fixtures/mcp_card_create.json");
     const USER_CURRENT_FIXTURE: &str = include_str!("../../tests/fixtures/mcp_user_current.json");
+    const CARD_FULL_FIXTURE: &str = include_str!("../../tests/fixtures/mcp_card_full.json");
 
     fn mcp_for(server: &MockServer) -> KaitenMcp {
         let client = KaitenClient::new(&server.uri(), "test-token").unwrap();
@@ -611,6 +632,70 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(tool_text(&result).trim(), "[]");
+    }
+
+    #[tokio::test]
+    async fn get_card_returns_compact_detail_with_links_blockers_files() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/cards/67089469"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(CARD_FULL_FIXTURE))
+            .mount(&server)
+            .await;
+
+        let mcp = mcp_for(&server);
+        let result = mcp
+            .get_card(Parameters(GetCardParams {
+                card_id: 67_089_469,
+            }))
+            .await
+            .unwrap();
+        let text = tool_text(&result);
+        let value: serde_json::Value = serde_json::from_str(&text).unwrap();
+
+        // links, blockers and files are projected compactly
+        assert_eq!(value["children"][0]["id"], 67_089_310);
+        assert_eq!(value["children"][0]["title"], "child card");
+        assert_eq!(value["blockers"][0]["reason"], "waiting for child card");
+        assert_eq!(value["blockers"][0]["blocker_card_id"], 67_089_310);
+        assert_eq!(value["files"][0]["name"], "probe-attach.txt");
+        assert_eq!(value["members"][0]["name"], "dxmuser");
+        assert_eq!(value["tags"][0], "cli-test");
+        // nested objects are flattened to names; raw keys must be gone
+        let obj = value.as_object().unwrap();
+        for absent in ["board", "lane", "owner_id", "uid", "parents", "properties"] {
+            assert!(!obj.contains_key(absent), "unexpected key {absent}: {text}");
+        }
+        // compact serialization: no pretty-print indentation
+        assert!(!text.contains("\n  "), "output must not be pretty-printed");
+    }
+
+    #[tokio::test]
+    async fn create_card_returns_mutation_result_with_web_url() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/cards"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(CARD_CREATE_FIXTURE))
+            .mount(&server)
+            .await;
+
+        let mcp = mcp_for(&server);
+        let result = mcp
+            .create_card(Parameters(CreateCardParams {
+                board_id: 1_826_109,
+                title: "from mcp".to_string(),
+                column_id: None,
+                lane_id: None,
+                description: None,
+                type_id: None,
+                asap: None,
+            }))
+            .await
+            .unwrap();
+        let value: serde_json::Value = serde_json::from_str(&tool_text(&result)).unwrap();
+        assert_eq!(value["url"], format!("{}/67089469", server.uri()));
+        // the mutation result must NOT echo the description back
+        assert!(value.get("description").is_none());
     }
 
     #[test]

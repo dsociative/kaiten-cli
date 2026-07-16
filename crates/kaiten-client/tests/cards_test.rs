@@ -106,6 +106,53 @@ async fn get_parses_full_card() {
     assert_eq!(card.checklists[0].items.len(), 1);
     assert_eq!(card.checklists[0].items[0].text, "first item");
     assert_eq!(card.checklists[0].items[0].checked, Some(true));
+    // links, blockers and files embedded in the full card
+    assert_eq!(card.key, None);
+    assert_eq!(card.blocked, Some(true));
+    assert_eq!(card.children_count, Some(1));
+    assert_eq!(card.parents_count, Some(0));
+    assert_eq!(card.children.len(), 1);
+    assert_eq!(card.children[0].id, 67_089_310);
+    assert_eq!(card.children[0].title, "child card");
+    assert!(card.parents.is_empty());
+    assert_eq!(card.blockers.len(), 1);
+    let blocker = &card.blockers[0];
+    assert_eq!(blocker.reason.as_deref(), Some("waiting for child card"));
+    assert_eq!(blocker.blocker_card_id, Some(67_089_310));
+    assert_eq!(blocker.released, Some(false));
+    assert_eq!(card.files.len(), 1);
+    assert_eq!(card.files[0].name, "probe-attach.txt");
+    assert_eq!(
+        card.files[0].url.as_deref(),
+        Some("https://files.kaiten.ru/48c405aa-a7a3-455e-9752-f2c3225cfecb.txt")
+    );
+    assert_eq!(card.files[0].size, Some(58));
+}
+
+/// The `blockers`/`children`/`parents`/`files` keys are conditional in the
+/// API (absent until first used) — a card without them must still parse.
+#[tokio::test]
+async fn get_parses_card_without_conditional_link_keys() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/cards/1"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_raw(r#"{"id":1,"title":"bare"}"#, "application/json"),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = KaitenClient::new(&server.uri(), "test-token").unwrap();
+    let card = client.cards().get(1).await.unwrap();
+
+    assert!(card.children.is_empty());
+    assert!(card.parents.is_empty());
+    assert!(card.blockers.is_empty());
+    assert!(card.files.is_empty());
+    assert_eq!(card.blocked, None);
+    assert_eq!(card.key, None);
 }
 
 const CARD_CREATE: &str = include_str!("fixtures/card_create.json");
