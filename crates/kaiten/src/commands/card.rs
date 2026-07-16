@@ -266,6 +266,31 @@ pub async fn run(
             board,
         } => run_move(client, json, &card, column, lane, board).await,
         CardCmd::Archive { card } => run_archive(client, json, &card).await,
+        CardCmd::Link {
+            card,
+            child,
+            parent,
+            blocks,
+            blocked_by,
+            reason,
+        } => {
+            run_link(
+                client,
+                json,
+                &card,
+                (child, parent, blocks, blocked_by),
+                reason,
+            )
+            .await
+        }
+        CardCmd::Unlink {
+            card,
+            child,
+            parent,
+            blocks,
+            blocked_by,
+        } => run_unlink(client, json, &card, (child, parent, blocks, blocked_by)).await,
+        CardCmd::Unblock { card } => run_unblock(client, json, &card).await,
         CardCmd::Member(cmd) => run_member(client, json, cmd).await,
         CardCmd::Comment(cmd) => run_comment(client, json, cmd).await,
         CardCmd::Checklist(cmd) => run_checklist(client, json, cmd).await,
@@ -670,6 +695,119 @@ async fn run_checklist(
             } => set_item_checked(client, json, &card, checklist_id, item_id, false).await,
         },
     }
+}
+
+/// (child, parent, blocks, blocked_by) — exactly one must be set
+/// (clap's arg group guarantees at most one).
+type LinkFlags = (Option<u64>, Option<u64>, Option<u64>, Option<u64>);
+
+async fn run_link(
+    client: &KaitenClient,
+    json: bool,
+    card: &str,
+    flags: LinkFlags,
+    reason: Option<String>,
+) -> Result<(), CliError> {
+    let card_id = parse_card_ref(card)?;
+    let (child, parent, blocks, blocked_by) = flags;
+    let described = match (child, parent, blocks, blocked_by) {
+        (Some(target), None, None, None) => {
+            client.links().add_child(card_id, target).await?;
+            format!("card {target} is now a child of {card_id}")
+        }
+        (None, Some(target), None, None) => {
+            client.links().add_child(target, card_id).await?;
+            format!("card {target} is now a parent of {card_id}")
+        }
+        (None, None, Some(target), None) => {
+            client
+                .links()
+                .add_blocker(target, Some(card_id), reason.as_deref())
+                .await?;
+            format!("card {card_id} now blocks {target}")
+        }
+        (None, None, None, Some(target)) => {
+            client
+                .links()
+                .add_blocker(card_id, Some(target), reason.as_deref())
+                .await?;
+            format!("card {card_id} is now blocked by {target}")
+        }
+        _ => {
+            return Err(CliError::InvalidArg(
+                "pass exactly one of --child/--parent/--blocks/--blocked-by".into(),
+            ));
+        }
+    };
+    if json {
+        return output::print_json(&serde_json::json!({ "linked": true }));
+    }
+    println!("{described}");
+    Ok(())
+}
+
+async fn run_unlink(
+    client: &KaitenClient,
+    json: bool,
+    card: &str,
+    flags: LinkFlags,
+) -> Result<(), CliError> {
+    let card_id = parse_card_ref(card)?;
+    let (child, parent, blocks, blocked_by) = flags;
+    match (child, parent, blocks, blocked_by) {
+        (Some(target), None, None, None) => {
+            client.links().remove_child(card_id, target).await?;
+        }
+        (None, Some(target), None, None) => {
+            client.links().remove_child(target, card_id).await?;
+        }
+        (None, None, Some(target), None) | (None, None, None, Some(target)) => {
+            // the blocker entry lives on the BLOCKED card
+            let (blocked_id, blocker_card_id) = if blocks.is_some() {
+                (target, card_id)
+            } else {
+                (card_id, target)
+            };
+            let blocked_card = client.cards().get(blocked_id).await?;
+            let Some(blocker) = blocked_card
+                .blockers
+                .iter()
+                .find(|b| b.blocker_card_id == Some(blocker_card_id))
+            else {
+                return Err(CliError::InvalidArg(format!(
+                    "card {blocked_id} has no blocker with card {blocker_card_id}"
+                )));
+            };
+            client
+                .links()
+                .remove_blocker(blocked_id, blocker.id)
+                .await?;
+        }
+        _ => {
+            return Err(CliError::InvalidArg(
+                "pass exactly one of --child/--parent/--blocks/--blocked-by".into(),
+            ));
+        }
+    }
+    if json {
+        return output::print_json(&serde_json::json!({ "unlinked": true }));
+    }
+    println!("unlinked");
+    Ok(())
+}
+
+async fn run_unblock(client: &KaitenClient, json: bool, card: &str) -> Result<(), CliError> {
+    let card_id = parse_card_ref(card)?;
+    let req = UpdateCard {
+        blocked: Some(false),
+        ..Default::default()
+    };
+    let card = client.cards().update(card_id, &req).await?;
+    if json {
+        return output::print_json(&card);
+    }
+    println!("released all blocks on card {}", card.id);
+    Ok(())
 }
 
 async fn run_tag(client: &KaitenClient, json: bool, cmd: CardTagCmd) -> Result<(), CliError> {

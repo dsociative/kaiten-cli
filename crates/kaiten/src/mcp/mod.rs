@@ -304,6 +304,50 @@ struct PollUpdatesResponse {
     mine_card_ids: Option<Vec<u64>>,
 }
 
+/// Direction of a card link relative to `card_id`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum LinkKind {
+    /// target_id becomes a CHILD of card_id
+    Child,
+    /// target_id becomes a PARENT of card_id
+    Parent,
+    /// card_id BLOCKS target_id
+    Blocks,
+    /// card_id is BLOCKED BY target_id
+    BlockedBy,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct LinkCardsParams {
+    /// Card id the link is described from
+    pub card_id: u64,
+    /// The other card
+    pub target_id: u64,
+    /// child: target becomes a child of card; parent: target becomes a
+    /// parent of card; blocks: card blocks target; blocked_by: card is
+    /// blocked by target
+    pub kind: LinkKind,
+    /// Optional block reason (blocks/blocked_by only)
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct UnlinkCardsParams {
+    /// Card id the link is described from
+    pub card_id: u64,
+    /// The other card
+    pub target_id: u64,
+    /// Same semantics as in link_cards
+    pub kind: LinkKind,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct ReleaseBlocksParams {
+    /// Card id
+    pub card_id: u64,
+}
+
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct ArchiveCardParams {
     /// Card id
@@ -679,6 +723,114 @@ impl KaitenMcp {
     ) -> Result<CallToolResult, McpError> {
         let values = try_api!(self.client.properties().select_values(p.property_id).await);
         json_result(&values)
+    }
+
+    #[tool(
+        description = "Link two cards: kind=child makes target a child of card, kind=parent makes target a parent of card, kind=blocks makes card block target, kind=blocked_by blocks card by target (reason is optional for the block kinds). Links are visible in get_card (children/parents/blockers)."
+    )]
+    async fn link_cards(
+        &self,
+        Parameters(p): Parameters<LinkCardsParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match p.kind {
+            LinkKind::Child => {
+                try_api!(self.client.links().add_child(p.card_id, p.target_id).await);
+            }
+            LinkKind::Parent => {
+                try_api!(self.client.links().add_child(p.target_id, p.card_id).await);
+            }
+            LinkKind::Blocks => {
+                try_api!(
+                    self.client
+                        .links()
+                        .add_blocker(p.target_id, Some(p.card_id), p.reason.as_deref())
+                        .await
+                );
+            }
+            LinkKind::BlockedBy => {
+                try_api!(
+                    self.client
+                        .links()
+                        .add_blocker(p.card_id, Some(p.target_id), p.reason.as_deref())
+                        .await
+                );
+            }
+        }
+        json_result(&serde_json::json!({
+            "linked": true,
+            "card_id": p.card_id,
+            "target_id": p.target_id,
+            "kind": format!("{:?}", p.kind).to_lowercase(),
+        }))
+    }
+
+    #[tool(
+        description = "Remove a card link created with link_cards (same kind semantics). For block kinds the matching blocker is looked up and removed."
+    )]
+    async fn unlink_cards(
+        &self,
+        Parameters(p): Parameters<UnlinkCardsParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match p.kind {
+            LinkKind::Child => {
+                try_api!(
+                    self.client
+                        .links()
+                        .remove_child(p.card_id, p.target_id)
+                        .await
+                );
+            }
+            LinkKind::Parent => {
+                try_api!(
+                    self.client
+                        .links()
+                        .remove_child(p.target_id, p.card_id)
+                        .await
+                );
+            }
+            LinkKind::Blocks | LinkKind::BlockedBy => {
+                // the blocker entry lives on the BLOCKED card
+                let (blocked_id, blocker_card_id) = if p.kind == LinkKind::Blocks {
+                    (p.target_id, p.card_id)
+                } else {
+                    (p.card_id, p.target_id)
+                };
+                let card = try_api!(self.client.cards().get(blocked_id).await);
+                let Some(blocker) = card
+                    .blockers
+                    .iter()
+                    .find(|b| b.blocker_card_id == Some(blocker_card_id))
+                else {
+                    return Ok(CallToolResult::error(vec![ContentBlock::text(format!(
+                        "card {blocked_id} has no blocker with card {blocker_card_id}"
+                    ))]));
+                };
+                try_api!(
+                    self.client
+                        .links()
+                        .remove_blocker(blocked_id, blocker.id)
+                        .await
+                );
+            }
+        }
+        json_result(&serde_json::json!({
+            "unlinked": true,
+            "card_id": p.card_id,
+            "target_id": p.target_id,
+        }))
+    }
+
+    #[tool(description = "Release ALL blocks on a card at once.")]
+    async fn release_blocks(
+        &self,
+        Parameters(p): Parameters<ReleaseBlocksParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let req = UpdateCard {
+            blocked: Some(false),
+            ..Default::default()
+        };
+        let card = try_api!(self.client.cards().update(p.card_id, &req).await);
+        json_result(&MutationResult::new(&card, &self.web_base))
     }
 
     #[tool(
@@ -1367,8 +1519,125 @@ mod tests {
         assert_ne!(result.is_error, Some(true));
     }
 
+    #[tokio::test]
+    async fn link_cards_child_and_parent_invert_direction() {
+        let server = MockServer::start().await;
+        // kind=child: target 20 becomes a child of card 10
+        Mock::given(method("POST"))
+            .and(path("/cards/10/children"))
+            .and(body_json(serde_json::json!({ "card_id": 20 })))
+            .respond_with(ResponseTemplate::new(200).set_body_string(CARD_CREATE_FIXTURE))
+            .expect(1)
+            .mount(&server)
+            .await;
+        // kind=parent: target 20 becomes a parent of card 10 (inverted call)
+        Mock::given(method("POST"))
+            .and(path("/cards/20/children"))
+            .and(body_json(serde_json::json!({ "card_id": 10 })))
+            .respond_with(ResponseTemplate::new(200).set_body_string(CARD_CREATE_FIXTURE))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let mcp = mcp_for(&server);
+        for kind in [super::LinkKind::Child, super::LinkKind::Parent] {
+            let result = mcp
+                .link_cards(Parameters(super::LinkCardsParams {
+                    card_id: 10,
+                    target_id: 20,
+                    kind,
+                    reason: None,
+                }))
+                .await
+                .unwrap();
+            assert_ne!(result.is_error, Some(true));
+        }
+    }
+
+    #[tokio::test]
+    async fn link_cards_block_kinds_target_the_blocked_card() {
+        let server = MockServer::start().await;
+        // kind=blocks: card 10 blocks target 20 -> blocker entry on 20
+        Mock::given(method("POST"))
+            .and(path("/cards/20/blockers"))
+            .and(body_json(serde_json::json!({ "blocker_card_id": 10 })))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_string(r#"{"id": 1, "blocker_card_id": 10}"#),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        // kind=blocked_by: card 10 is blocked by target 20 -> blocker entry on 10
+        Mock::given(method("POST"))
+            .and(path("/cards/10/blockers"))
+            .and(body_json(
+                serde_json::json!({ "blocker_card_id": 20, "reason": "wait" }),
+            ))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_string(r#"{"id": 2, "blocker_card_id": 20}"#),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let mcp = mcp_for(&server);
+        let result = mcp
+            .link_cards(Parameters(super::LinkCardsParams {
+                card_id: 10,
+                target_id: 20,
+                kind: super::LinkKind::Blocks,
+                reason: None,
+            }))
+            .await
+            .unwrap();
+        assert_ne!(result.is_error, Some(true));
+        let result = mcp
+            .link_cards(Parameters(super::LinkCardsParams {
+                card_id: 10,
+                target_id: 20,
+                kind: super::LinkKind::BlockedBy,
+                reason: Some("wait".to_string()),
+            }))
+            .await
+            .unwrap();
+        assert_ne!(result.is_error, Some(true));
+    }
+
+    #[tokio::test]
+    async fn unlink_blocked_by_finds_and_removes_matching_blocker() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/cards/10"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(
+                r#"{"id": 10, "title": "x", "blockers": [
+                    {"id": 501, "blocker_card_id": 99},
+                    {"id": 502, "blocker_card_id": 20}
+                ]}"#,
+            ))
+            .expect(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("DELETE"))
+            .and(path("/cards/10/blockers/502"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("{}"))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let mcp = mcp_for(&server);
+        let result = mcp
+            .unlink_cards(Parameters(super::UnlinkCardsParams {
+                card_id: 10,
+                target_id: 20,
+                kind: super::LinkKind::BlockedBy,
+            }))
+            .await
+            .unwrap();
+        assert_ne!(result.is_error, Some(true));
+    }
+
     #[test]
-    fn registers_exactly_25_tools_with_spec_names() {
+    fn registers_exactly_28_tools_with_spec_names() {
         let tools = KaitenMcp::tool_router().list_all();
         let mut names: Vec<String> = tools.iter().map(|t| t.name.to_string()).collect();
         names.sort();
@@ -1398,6 +1667,9 @@ mod tests {
             "poll_updates",
             "list_custom_properties",
             "list_property_select_values",
+            "link_cards",
+            "unlink_cards",
+            "release_blocks",
         ];
         expected.sort_unstable();
         assert_eq!(names, expected);

@@ -102,6 +102,11 @@ impl KaitenClient {
         crate::api::checklists::Checklists { client: self }
     }
 
+    /// Card links facade (children hierarchy, blockers).
+    pub fn links(&self) -> crate::api::links::Links<'_> {
+        crate::api::links::Links { client: self }
+    }
+
     /// Custom properties facade.
     pub fn properties(&self) -> crate::api::properties::Properties<'_> {
         crate::api::properties::Properties { client: self }

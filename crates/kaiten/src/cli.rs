@@ -234,6 +234,39 @@ pub enum CardCmd {
     },
     /// Archive card
     Archive { card: String },
+    /// Link the card to another card (hierarchy or blocking)
+    Link {
+        card: String,
+        /// Make <CHILD> a child of the card
+        #[arg(long, group = "link_kind")]
+        child: Option<u64>,
+        /// Make <PARENT> a parent of the card
+        #[arg(long, group = "link_kind")]
+        parent: Option<u64>,
+        /// The card blocks <BLOCKS>
+        #[arg(long, group = "link_kind")]
+        blocks: Option<u64>,
+        /// The card is blocked by <BLOCKED_BY>
+        #[arg(long = "blocked-by", group = "link_kind")]
+        blocked_by: Option<u64>,
+        /// Block reason (with --blocks/--blocked-by)
+        #[arg(long, requires = "link_kind")]
+        reason: Option<String>,
+    },
+    /// Remove a card link (same flags as `card link`)
+    Unlink {
+        card: String,
+        #[arg(long, group = "link_kind")]
+        child: Option<u64>,
+        #[arg(long, group = "link_kind")]
+        parent: Option<u64>,
+        #[arg(long, group = "link_kind")]
+        blocks: Option<u64>,
+        #[arg(long = "blocked-by", group = "link_kind")]
+        blocked_by: Option<u64>,
+    },
+    /// Release ALL blocks on the card
+    Unblock { card: String },
     /// Card members
     #[command(subcommand)]
     Member(CardMemberCmd),

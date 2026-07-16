@@ -136,6 +136,9 @@ pub struct UpdateCard {
     /// 2 = archive the card.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub condition: Option<u8>,
+    /// Send `false` to release ALL blocks on the card.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub blocked: Option<bool>,
     /// Custom property values keyed as `id_{property_id}`; select values are
     /// ARRAYS of option ids, date is `{date, time, tzOffset}`, `null` clears.
     #[serde(skip_serializing_if = "Option::is_none")]
