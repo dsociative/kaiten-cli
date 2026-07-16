@@ -213,6 +213,9 @@ pub struct Card {
     pub due_date: Option<String>,
     #[serde(default)]
     pub comments_total: Option<u32>,
+    /// Comments do NOT bump `updated` — this is the only signal they leave.
+    #[serde(default)]
+    pub comment_last_added_at: Option<String>,
     /// Nested board has no `columns`/`lanes` keys → they default to empty.
     #[serde(default)]
     pub board: Option<Board>,

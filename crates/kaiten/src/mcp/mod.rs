@@ -231,6 +231,61 @@ pub struct SetChecklistItemCheckedParams {
     pub checked: bool,
 }
 
+#[derive(Debug, Default, serde::Deserialize, schemars::JsonSchema)]
+pub struct PollUpdatesParams {
+    /// Cursor: pass next_since from the previous poll_updates response verbatim.
+    /// ISO 8601; the bound is INCLUSIVE, so a card updated exactly at `since`
+    /// is returned again — deduplicate by (id, updated).
+    pub since: String,
+    /// Limit scope to a space
+    pub space_id: Option<u64>,
+    /// Limit scope to a board
+    pub board_id: Option<u64>,
+    /// Only cards where the current user is a member; adds mine_card_ids
+    /// to the response (diff it against your previous poll to detect
+    /// added/removed membership — member changes do not bump `updated`)
+    pub mine: Option<bool>,
+    /// Like mine, but for an explicit user id
+    pub member_id: Option<u64>,
+    /// Also detect cards with new comments (default true). Comments do not
+    /// bump `updated`, so they are tracked separately
+    pub track_comments: Option<bool>,
+    /// Max cards per section (default 50; the server caps at 100)
+    pub limit: Option<u32>,
+}
+
+/// A card that received new comments since the cursor.
+#[derive(Debug, serde::Serialize)]
+struct CommentedCard {
+    id: u64,
+    title: String,
+    comment_last_added_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    comments_total: Option<u32>,
+}
+
+#[derive(Debug, serde::Serialize)]
+struct PollUpdatesResponse {
+    since: String,
+    /// Cursor for the next call.
+    next_since: String,
+    /// True when updated_cards hit the limit — poll again with next_since
+    /// to fetch the rest before acting.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    has_more: bool,
+    /// Cards whose fields changed or that were moved (field edits and moves
+    /// bump `updated`; comments and membership changes do not).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    updated_cards: Vec<CardSummary>,
+    /// Cards with comments added since the cursor.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    commented_cards: Vec<CommentedCard>,
+    /// Full id list of cards where the tracked user is a member
+    /// (present only with mine/member_id).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mine_card_ids: Option<Vec<u64>>,
+}
+
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct ArchiveCardParams {
     /// Card id
@@ -585,6 +640,108 @@ impl KaitenMcp {
     async fn list_card_types(&self) -> Result<CallToolResult, McpError> {
         let types = try_api!(self.client.tags().card_types().await);
         json_result(&types)
+    }
+
+    #[tool(
+        description = "Poll for changes since a cursor: field edits/moves (updated_cards), new comments (commented_cards) and — with mine=true — the full membership id list for diffing. Pass next_since back as `since` on the next call; entries can repeat at the cursor boundary (at-least-once), deduplicate by (id, updated). Start with e.g. the current time minus your poll interval."
+    )]
+    async fn poll_updates(
+        &self,
+        Parameters(p): Parameters<PollUpdatesParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let limit = p.limit.unwrap_or(50).min(100);
+        let mut member_ids: Vec<u64> = p.member_id.into_iter().collect();
+        if p.mine == Some(true) {
+            let me = try_api!(self.client.users().current().await);
+            if !member_ids.contains(&me.id) {
+                member_ids.push(me.id);
+            }
+        }
+        let scope = CardFilter {
+            space_id: p.space_id,
+            board_id: p.board_id,
+            member_ids: member_ids.clone(),
+            limit: Some(limit),
+            ..Default::default()
+        };
+
+        // A: field edits and moves bump `updated`; ascending order makes the
+        // cursor safe when the page overflows (has_more).
+        let filter_updates = CardFilter {
+            updated_after: Some(p.since.clone()),
+            order_by: Some("updated".to_string()),
+            order_direction: Some("asc".to_string()),
+            ..scope.clone()
+        };
+        let updated = try_api!(self.client.cards().list(&filter_updates).await);
+        let has_more = updated.len() >= limit as usize;
+
+        // B: comments leave only comment_last_added_at behind (they do NOT
+        // bump `updated`) — sort by it and cut client-side. The comparison is
+        // lexicographic, valid for the API's uniform UTC ISO 8601 strings.
+        let mut commented: Vec<CommentedCard> = Vec::new();
+        if p.track_comments != Some(false) {
+            let filter_comments = CardFilter {
+                order_by: Some("comment_last_added_at".to_string()),
+                order_direction: Some("desc".to_string()),
+                ..scope.clone()
+            };
+            let cards = try_api!(self.client.cards().list(&filter_comments).await);
+            commented = cards
+                .iter()
+                .filter_map(|c| {
+                    let at = c.comment_last_added_at.clone()?;
+                    (at.as_str() >= p.since.as_str()).then(|| CommentedCard {
+                        id: c.id,
+                        title: c.title.clone(),
+                        comment_last_added_at: at,
+                        comments_total: c.comments_total,
+                    })
+                })
+                .collect();
+        }
+
+        // C: membership snapshot — member add/remove bumps nothing on the
+        // card, so the agent detects it by diffing this list between polls.
+        let mine_card_ids = if member_ids.is_empty() {
+            None
+        } else {
+            let filter_mine = CardFilter {
+                condition: Some(1),
+                limit: Some(100),
+                ..scope
+            };
+            let cards = try_api!(self.client.cards().list(&filter_mine).await);
+            Some(cards.iter().map(|c| c.id).collect())
+        };
+
+        // Cursor: when page A overflowed, everything after its last row is
+        // unseen — the cursor must not jump past it (section B will simply be
+        // re-scanned on the next call; at-least-once by design).
+        let next_since = if has_more {
+            updated
+                .last()
+                .and_then(|c| c.updated.clone())
+                .unwrap_or_else(|| p.since.clone())
+        } else {
+            let max_updated = updated.iter().filter_map(|c| c.updated.as_deref());
+            let max_commented = commented.iter().map(|c| c.comment_last_added_at.as_str());
+            max_updated
+                .chain(max_commented)
+                .chain(std::iter::once(p.since.as_str()))
+                .max()
+                .unwrap_or(p.since.as_str())
+                .to_string()
+        };
+
+        json_result(&PollUpdatesResponse {
+            since: p.since,
+            next_since,
+            has_more,
+            updated_cards: updated.iter().map(CardSummary::from).collect(),
+            commented_cards: commented,
+            mine_card_ids,
+        })
     }
 }
 
@@ -979,8 +1136,170 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn poll_updates_empty_keeps_cursor_and_sends_expected_queries() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/cards"))
+            .and(query_param("updated_after", "2026-07-16T10:00:00.000Z"))
+            .and(query_param("order_by", "updated"))
+            .and(query_param("order_direction", "asc"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("[]"))
+            .expect(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/cards"))
+            .and(query_param("order_by", "comment_last_added_at"))
+            .and(query_param("order_direction", "desc"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("[]"))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let mcp = mcp_for(&server);
+        let result = mcp
+            .poll_updates(Parameters(super::PollUpdatesParams {
+                since: "2026-07-16T10:00:00.000Z".to_string(),
+                ..Default::default()
+            }))
+            .await
+            .unwrap();
+        let value: serde_json::Value = serde_json::from_str(&tool_text(&result)).unwrap();
+        assert_eq!(value["next_since"], "2026-07-16T10:00:00.000Z");
+        assert!(value.get("updated_cards").is_none());
+        assert!(value.get("commented_cards").is_none());
+        assert!(value.get("mine_card_ids").is_none());
+        assert!(value.get("has_more").is_none());
+    }
+
+    #[tokio::test]
+    async fn poll_updates_full_page_sets_has_more_and_cursor_from_last_row() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/cards"))
+            .and(query_param("order_by", "updated"))
+            .and(query_param("limit", "2"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(
+                r#"[
+                    {"id": 1, "title": "a", "updated": "2026-07-16T10:05:00.000Z"},
+                    {"id": 2, "title": "b", "updated": "2026-07-16T10:10:00.000Z"}
+                ]"#,
+            ))
+            .mount(&server)
+            .await;
+        // section B sees a LATER comment which must NOT advance the cursor
+        // past the unseen tail of section A
+        Mock::given(method("GET"))
+            .and(path("/cards"))
+            .and(query_param("order_by", "comment_last_added_at"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(
+                r#"[{"id": 9, "title": "c", "comment_last_added_at": "2026-07-16T11:00:00.000Z"}]"#,
+            ))
+            .mount(&server)
+            .await;
+
+        let mcp = mcp_for(&server);
+        let result = mcp
+            .poll_updates(Parameters(super::PollUpdatesParams {
+                since: "2026-07-16T10:00:00.000Z".to_string(),
+                limit: Some(2),
+                ..Default::default()
+            }))
+            .await
+            .unwrap();
+        let value: serde_json::Value = serde_json::from_str(&tool_text(&result)).unwrap();
+        assert_eq!(value["has_more"], true);
+        assert_eq!(value["next_since"], "2026-07-16T10:10:00.000Z");
+        assert_eq!(value["updated_cards"].as_array().unwrap().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn poll_updates_cuts_comments_before_cursor_and_advances_to_max() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/cards"))
+            .and(query_param("order_by", "updated"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("[]"))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/cards"))
+            .and(query_param("order_by", "comment_last_added_at"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(
+                r#"[
+                    {"id": 1, "title": "new", "comments_total": 3, "comment_last_added_at": "2026-07-16T10:30:00.000Z"},
+                    {"id": 2, "title": "old", "comment_last_added_at": "2026-07-16T09:00:00.000Z"},
+                    {"id": 3, "title": "never"}
+                ]"#,
+            ))
+            .mount(&server)
+            .await;
+
+        let mcp = mcp_for(&server);
+        let result = mcp
+            .poll_updates(Parameters(super::PollUpdatesParams {
+                since: "2026-07-16T10:00:00.000Z".to_string(),
+                ..Default::default()
+            }))
+            .await
+            .unwrap();
+        let value: serde_json::Value = serde_json::from_str(&tool_text(&result)).unwrap();
+        let commented = value["commented_cards"].as_array().unwrap();
+        assert_eq!(commented.len(), 1, "only the fresh comment: {value}");
+        assert_eq!(commented[0]["id"], 1);
+        assert_eq!(value["next_since"], "2026-07-16T10:30:00.000Z");
+    }
+
+    #[tokio::test]
+    async fn poll_updates_mine_resolves_user_and_returns_membership_ids() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/users/current"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(USER_CURRENT_FIXTURE))
+            .expect(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/cards"))
+            .and(query_param("member_ids", "1068514"))
+            .and(query_param("order_by", "updated"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("[]"))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/cards"))
+            .and(query_param("member_ids", "1068514"))
+            .and(query_param("order_by", "comment_last_added_at"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("[]"))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/cards"))
+            .and(query_param("member_ids", "1068514"))
+            .and(query_param("condition", "1"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(
+                r#"[{"id": 5, "title": "mine"}, {"id": 6, "title": "also mine"}]"#,
+            ))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let mcp = mcp_for(&server);
+        let result = mcp
+            .poll_updates(Parameters(super::PollUpdatesParams {
+                since: "2026-07-16T10:00:00.000Z".to_string(),
+                mine: Some(true),
+                ..Default::default()
+            }))
+            .await
+            .unwrap();
+        let value: serde_json::Value = serde_json::from_str(&tool_text(&result)).unwrap();
+        assert_eq!(value["mine_card_ids"], serde_json::json!([5, 6]));
+    }
+
     #[test]
-    fn registers_exactly_22_tools_with_spec_names() {
+    fn registers_exactly_23_tools_with_spec_names() {
         let tools = KaitenMcp::tool_router().list_all();
         let mut names: Vec<String> = tools.iter().map(|t| t.name.to_string()).collect();
         names.sort();
@@ -1007,6 +1326,7 @@ mod tests {
             "add_card_tag",
             "remove_card_tag",
             "list_card_types",
+            "poll_updates",
         ];
         expected.sort_unstable();
         assert_eq!(names, expected);

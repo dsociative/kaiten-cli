@@ -9,7 +9,7 @@ use std::time::Duration;
 
 const READ_TIMEOUT: Duration = Duration::from_secs(20);
 
-const EXPECTED_TOOLS: [&str; 22] = [
+const EXPECTED_TOOLS: [&str; 23] = [
     "current_user",
     "list_spaces",
     "list_boards",
@@ -32,6 +32,7 @@ const EXPECTED_TOOLS: [&str; 22] = [
     "add_card_tag",
     "remove_card_tag",
     "list_card_types",
+    "poll_updates",
 ];
 
 struct McpProc {
