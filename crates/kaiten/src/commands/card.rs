@@ -1,7 +1,8 @@
 use kaiten_client::{CardFilter, CreateCard, KaitenClient, UpdateCard};
 
 use crate::cli::{
-    CardChecklistCmd, CardChecklistItemCmd, CardCmd, CardCommentCmd, CardMemberCmd, CardTagCmd,
+    CardChecklistCmd, CardChecklistItemCmd, CardCmd, CardCommentCmd, CardFileCmd, CardMemberCmd,
+    CardTagCmd,
 };
 use crate::config::Defaults;
 use crate::error::CliError;
@@ -295,6 +296,7 @@ pub async fn run(
         CardCmd::Comment(cmd) => run_comment(client, json, cmd).await,
         CardCmd::Checklist(cmd) => run_checklist(client, json, cmd).await,
         CardCmd::Tag(cmd) => run_tag(client, json, cmd).await,
+        CardCmd::File(cmd) => run_file(client, json, cmd).await,
     }
 }
 
@@ -808,6 +810,34 @@ async fn run_unblock(client: &KaitenClient, json: bool, card: &str) -> Result<()
     }
     println!("released all blocks on card {}", card.id);
     Ok(())
+}
+
+async fn run_file(client: &KaitenClient, json: bool, cmd: CardFileCmd) -> Result<(), CliError> {
+    match cmd {
+        CardFileCmd::Add { card, path } => {
+            let card_id = parse_card_ref(&card)?;
+            let file = client.files().attach(card_id, &path).await?;
+            if json {
+                return output::print_json(&file);
+            }
+            println!(
+                "attached {} ({} bytes) to card {card_id}\nurl (public!): {}",
+                file.name,
+                file.size.unwrap_or(0),
+                file.url.as_deref().unwrap_or("-")
+            );
+            Ok(())
+        }
+        CardFileCmd::Rm { card, file_id } => {
+            let card_id = parse_card_ref(&card)?;
+            client.files().detach(card_id, file_id).await?;
+            if json {
+                return output::print_json(&serde_json::json!({ "detached": true }));
+            }
+            println!("detached file {file_id} from card {card_id}");
+            Ok(())
+        }
+    }
 }
 
 async fn run_tag(client: &KaitenClient, json: bool, cmd: CardTagCmd) -> Result<(), CliError> {

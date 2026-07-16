@@ -279,6 +279,21 @@ pub enum CardCmd {
     /// Card tags
     #[command(subcommand)]
     Tag(CardTagCmd),
+    /// Card file attachments
+    #[command(subcommand)]
+    File(CardFileCmd),
+}
+
+#[derive(Subcommand)]
+pub enum CardFileCmd {
+    /// Attach a local file (served from a PUBLIC unguessable URL!)
+    Add {
+        card: String,
+        /// Path of the file to upload
+        path: std::path::PathBuf,
+    },
+    /// Detach a file by id (see `card view`)
+    Rm { card: String, file_id: u64 },
 }
 
 #[derive(Subcommand)]

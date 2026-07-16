@@ -2,6 +2,7 @@ pub mod boards;
 pub mod cards;
 pub mod checklists;
 pub mod comments;
+pub mod files;
 pub mod links;
 pub mod members;
 pub mod properties;

@@ -9,7 +9,7 @@ use std::time::Duration;
 
 const READ_TIMEOUT: Duration = Duration::from_secs(20);
 
-const EXPECTED_TOOLS: [&str; 28] = [
+const EXPECTED_TOOLS: [&str; 30] = [
     "current_user",
     "list_spaces",
     "list_boards",
@@ -38,6 +38,8 @@ const EXPECTED_TOOLS: [&str; 28] = [
     "link_cards",
     "unlink_cards",
     "release_blocks",
+    "attach_file",
+    "detach_file",
 ];
 
 struct McpProc {

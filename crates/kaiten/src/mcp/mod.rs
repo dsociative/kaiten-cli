@@ -349,6 +349,22 @@ pub struct ReleaseBlocksParams {
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct AttachFileParams {
+    /// Card id
+    pub card_id: u64,
+    /// Absolute path of a LOCAL file to upload
+    pub file_path: String,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct DetachFileParams {
+    /// Card id
+    pub card_id: u64,
+    /// File id (see get_card files)
+    pub file_id: u64,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct ArchiveCardParams {
     /// Card id
     pub card_id: u64,
@@ -818,6 +834,31 @@ impl KaitenMcp {
             "card_id": p.card_id,
             "target_id": p.target_id,
         }))
+    }
+
+    #[tool(
+        description = "Attach a local file to a card (multipart upload). WARNING: Kaiten serves attachments from a public unguessable URL without authentication — never attach secrets. Returns the file id and its public url."
+    )]
+    async fn attach_file(
+        &self,
+        Parameters(p): Parameters<AttachFileParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let file = try_api!(
+            self.client
+                .files()
+                .attach(p.card_id, std::path::Path::new(&p.file_path))
+                .await
+        );
+        json_result(&projections::FileView::from(&file))
+    }
+
+    #[tool(description = "Detach (remove) a file from a card by file id (see get_card files).")]
+    async fn detach_file(
+        &self,
+        Parameters(p): Parameters<DetachFileParams>,
+    ) -> Result<CallToolResult, McpError> {
+        try_api!(self.client.files().detach(p.card_id, p.file_id).await);
+        json_result(&serde_json::json!({ "detached": true, "file_id": p.file_id }))
     }
 
     #[tool(description = "Release ALL blocks on a card at once.")]
@@ -1637,7 +1678,7 @@ mod tests {
     }
 
     #[test]
-    fn registers_exactly_28_tools_with_spec_names() {
+    fn registers_exactly_30_tools_with_spec_names() {
         let tools = KaitenMcp::tool_router().list_all();
         let mut names: Vec<String> = tools.iter().map(|t| t.name.to_string()).collect();
         names.sort();
@@ -1670,6 +1711,8 @@ mod tests {
             "link_cards",
             "unlink_cards",
             "release_blocks",
+            "attach_file",
+            "detach_file",
         ];
         expected.sort_unstable();
         assert_eq!(names, expected);
