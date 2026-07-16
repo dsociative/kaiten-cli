@@ -38,7 +38,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 clap = { version = "4", features = ["derive", "env"] }
 clap_complete = "4"
 comfy-table = "7"
-toml = "0.8"
+toml = "1.1"
 dirs = "6"
 rpassword = "7"
 rmcp = { version = "2", features = ["server", "macros", "transport-io"] }
