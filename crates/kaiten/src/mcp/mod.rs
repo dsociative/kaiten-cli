@@ -11,7 +11,7 @@ use rmcp::{ErrorData as McpError, ServerHandler, tool, tool_handler, tool_router
 use crate::error::CliError;
 use projections::{
     CardDetail, CardSummary, ChecklistItemView, ChecklistView, CommentResult, CommentView,
-    MemberView, MutationResult,
+    MemberView, MutationResult, UserView,
 };
 
 #[derive(Clone)]
@@ -229,6 +229,36 @@ pub struct SetChecklistItemCheckedParams {
     pub item_id: u64,
     /// true to check, false to uncheck
     pub checked: bool,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct ArchiveCardParams {
+    /// Card id
+    pub card_id: u64,
+    /// true to RESTORE the card from the archive instead
+    pub unarchive: Option<bool>,
+}
+
+#[derive(Debug, Default, serde::Deserialize, schemars::JsonSchema)]
+pub struct ListUsersParams {
+    /// Case-insensitive substring matched against username, full name and email
+    pub query: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct CardTagParams {
+    /// Card id
+    pub card_id: u64,
+    /// Tag name
+    pub name: String,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct AddChecklistParams {
+    /// Card id
+    pub card_id: u64,
+    /// Checklist name
+    pub name: String,
 }
 
 #[tool_router]
@@ -461,6 +491,100 @@ impl KaitenMcp {
                 .await
         );
         json_result(&ChecklistItemView::from(&item))
+    }
+
+    #[tool(
+        description = "Archive a card (hide it from the board). Pass unarchive=true to restore it instead."
+    )]
+    async fn archive_card(
+        &self,
+        Parameters(p): Parameters<ArchiveCardParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let req = UpdateCard {
+            condition: Some(if p.unarchive == Some(true) { 1 } else { 2 }),
+            ..Default::default()
+        };
+        let card = try_api!(self.client.cards().update(p.card_id, &req).await);
+        json_result(&MutationResult::new(&card, &self.web_base))
+    }
+
+    #[tool(
+        description = "List Kaiten users, optionally filtered by a case-insensitive substring of username/full name/email. Use it to find the user id for add_card_member."
+    )]
+    async fn list_users(
+        &self,
+        Parameters(p): Parameters<ListUsersParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let users = try_api!(self.client.users().list().await);
+        let needle = p.query.unwrap_or_default().to_lowercase();
+        let views: Vec<UserView> = users
+            .iter()
+            .filter(|u| {
+                needle.is_empty()
+                    || [&u.username, &u.full_name, &u.email]
+                        .into_iter()
+                        .flatten()
+                        .any(|f| f.to_lowercase().contains(&needle))
+            })
+            .map(UserView::from)
+            .collect();
+        json_result(&views)
+    }
+
+    #[tool(
+        description = "Add a tag to a card by name. The company tag is created automatically when it does not exist yet."
+    )]
+    async fn add_card_tag(
+        &self,
+        Parameters(p): Parameters<CardTagParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let tag = try_api!(self.client.tags().add_to_card(p.card_id, &p.name).await);
+        json_result(&tag)
+    }
+
+    #[tool(description = "Remove a tag from a card by name.")]
+    async fn remove_card_tag(
+        &self,
+        Parameters(p): Parameters<CardTagParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let card = try_api!(self.client.cards().get(p.card_id).await);
+        let Some(card_tag) = card.tags.iter().find(|t| t.name == p.name) else {
+            let existing = if card.tags.is_empty() {
+                "(none)".to_string()
+            } else {
+                card.tags
+                    .iter()
+                    .map(|t| t.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            };
+            return Ok(CallToolResult::error(vec![ContentBlock::text(format!(
+                "card {} has no tag `{}`; existing tags: {existing}",
+                p.card_id, p.name
+            ))]));
+        };
+        let tag_id = card_tag.tag_id.unwrap_or(card_tag.id);
+        try_api!(self.client.tags().remove_from_card(p.card_id, tag_id).await);
+        json_result(&serde_json::json!({ "removed": true, "tag": p.name }))
+    }
+
+    #[tool(
+        description = "Create a new (empty) checklist on a card; add items with add_checklist_item."
+    )]
+    async fn add_checklist(
+        &self,
+        Parameters(p): Parameters<AddChecklistParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let checklist = try_api!(self.client.checklists().add(p.card_id, &p.name).await);
+        json_result(&ChecklistView::from(&checklist))
+    }
+
+    #[tool(
+        description = "List card types of the company (their ids feed create_card/update_card type_id)."
+    )]
+    async fn list_card_types(&self) -> Result<CallToolResult, McpError> {
+        let types = try_api!(self.client.tags().card_types().await);
+        json_result(&types)
     }
 }
 
@@ -779,8 +903,84 @@ mod tests {
         assert!(value.get("description").is_none());
     }
 
+    #[tokio::test]
+    async fn archive_card_sends_condition_2() {
+        let server = MockServer::start().await;
+        Mock::given(method("PATCH"))
+            .and(path("/cards/67089469"))
+            .and(body_json(serde_json::json!({ "condition": 2 })))
+            .respond_with(ResponseTemplate::new(200).set_body_string(CARD_CREATE_FIXTURE))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let mcp = mcp_for(&server);
+        let result = mcp
+            .archive_card(Parameters(super::ArchiveCardParams {
+                card_id: 67_089_469,
+                unarchive: None,
+            }))
+            .await
+            .unwrap();
+        assert_ne!(result.is_error, Some(true));
+    }
+
+    #[tokio::test]
+    async fn list_users_filters_by_substring_across_fields() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/users"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(
+                r#"[
+                    {"id": 1, "uid": "u1", "username": "dxmuser", "full_name": "DX Muser", "email": "dxm@example.com"},
+                    {"id": 2, "uid": "u2", "username": "other", "full_name": "Someone Else", "email": "someone@example.com"}
+                ]"#,
+            ))
+            .mount(&server)
+            .await;
+
+        let mcp = mcp_for(&server);
+        let result = mcp
+            .list_users(Parameters(super::ListUsersParams {
+                query: Some("MUSER".to_string()),
+            }))
+            .await
+            .unwrap();
+        let value: serde_json::Value = serde_json::from_str(&tool_text(&result)).unwrap();
+        let arr = value.as_array().unwrap();
+        assert_eq!(arr.len(), 1, "case-insensitive match on one user: {value}");
+        assert_eq!(arr[0]["id"], 1);
+        // projection drops uid/activated noise
+        assert!(arr[0].get("uid").is_none());
+    }
+
+    #[tokio::test]
+    async fn remove_card_tag_unknown_name_is_tool_error_listing_existing() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/cards/67089469"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(CARD_FULL_FIXTURE))
+            .mount(&server)
+            .await;
+
+        let mcp = mcp_for(&server);
+        let result = mcp
+            .remove_card_tag(Parameters(super::CardTagParams {
+                card_id: 67_089_469,
+                name: "nope".to_string(),
+            }))
+            .await
+            .unwrap();
+        assert_eq!(result.is_error, Some(true));
+        let text = tool_text(&result);
+        assert!(
+            text.contains("cli-test"),
+            "error must list existing tags, got: {text}"
+        );
+    }
+
     #[test]
-    fn registers_exactly_16_tools_with_spec_names() {
+    fn registers_exactly_22_tools_with_spec_names() {
         let tools = KaitenMcp::tool_router().list_all();
         let mut names: Vec<String> = tools.iter().map(|t| t.name.to_string()).collect();
         names.sort();
@@ -794,13 +994,19 @@ mod tests {
             "create_card",
             "update_card",
             "move_card",
+            "archive_card",
             "add_card_member",
             "remove_card_member",
+            "list_users",
             "list_comments",
             "add_comment",
             "list_checklists",
+            "add_checklist",
             "add_checklist_item",
             "set_checklist_item_checked",
+            "add_card_tag",
+            "remove_card_tag",
+            "list_card_types",
         ];
         expected.sort_unstable();
         assert_eq!(names, expected);

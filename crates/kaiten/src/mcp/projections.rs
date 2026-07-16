@@ -5,7 +5,7 @@
 //! flatten nested objects to names and ids. Raw JSON stays available through
 //! the CLI (`kaiten card view --json`, `kaiten api`).
 
-use kaiten_client::{Blocker, Card, CardFile, CardMember, Checklist, ChecklistItem, Comment};
+use kaiten_client::{Blocker, Card, CardFile, CardMember, Checklist, ChecklistItem, Comment, User};
 
 #[allow(clippy::trivially_copy_pass_by_ref)] // signature dictated by serde
 fn is_false(v: &bool) -> bool {
@@ -80,6 +80,28 @@ impl From<&Card> for CardSummary {
             comments_total: card.comments_total.unwrap_or(0),
             children_count: card.children_count.unwrap_or(0),
             parents_count: card.parents_count.unwrap_or(0),
+        }
+    }
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct UserView {
+    pub id: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub username: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub full_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub email: Option<String>,
+}
+
+impl From<&User> for UserView {
+    fn from(u: &User) -> Self {
+        Self {
+            id: u.id,
+            username: u.username.clone(),
+            full_name: u.full_name.clone(),
+            email: u.email.clone(),
         }
     }
 }
