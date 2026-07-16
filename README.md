@@ -142,6 +142,39 @@ Authentication is shared with the CLI: run `kaiten auth login` once, or export
 `KAITEN_DOMAIN` / `KAITEN_TOKEN` in the client configuration. Logs go to stderr
 only — stdout carries the MCP protocol.
 
+## API coverage
+
+What this project covers of the [Kaiten API](https://developers.kaiten.ru/),
+by area (✅ covered, ◐ partial, — not covered):
+
+| Kaiten API area | CLI | MCP server |
+|---|---|---|
+| Auth, current user | ✅ | ✅ |
+| Spaces | ◐ list | ◐ list |
+| Boards, columns, lanes | ◐ read-only (`board list/view`) | ◐ read-only |
+| Cards: create / list / view / edit / move | ✅ | ✅ |
+| Cards: archive | ✅ | — |
+| Cards: delete, batch update, history | — | — |
+| Card list filters | ◐ space/board/column/member/mine/query/tag/type/archived/limit | ◐ same, minus lane/owner/offset |
+| Members: add / remove | ✅ (by id or email) | ✅ (by id only) |
+| Members: change role (responsible) | — | — |
+| Comments: list / add | ✅ | ✅ |
+| Comments: edit / delete | — | — |
+| Checklists: create, add items, check | ✅ | ◐ items only |
+| Tags on cards, tag list | ✅ | — |
+| Card types | ◐ list | — |
+| Users list (id lookup) | ✅ | — |
+| Card links: children / blockers | — | — |
+| Files, external links | — | — |
+| Custom properties | ◐ read via card view | ◐ read via `get_card` |
+| Time logs, sprints, SLA | — | — |
+| Events (webhooks / polling) | — | — |
+| Raw API escape hatch | ✅ `kaiten api` | — |
+
+Not covered and currently out of scope: administration (space/board CRUD,
+roles, groups, automations), service desk, documents, custom directories.
+Anything missing from the typed commands is reachable via `kaiten api`.
+
 ## Debugging
 
 - `-v` — debug logs to stderr: every HTTP request with method, path, status, duration
