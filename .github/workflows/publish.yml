@@ -1,0 +1,41 @@
+name: Publish
+
+# Publishes both crates to crates.io via Trusted Publishing (OIDC):
+# no long-lived token, crates.io trusts this exact workflow file in this
+# repository. One-time setup per crate on crates.io:
+# crate → Settings → Trusted Publishing → GitHub → repo dsociative/kaiten-cli,
+# workflow "publish.yml".
+#
+# workflow_dispatch allows re-running a publish for an existing tag
+# (run it with the tag ref).
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  id-token: write # OIDC token for crates.io Trusted Publishing
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: rust-lang/crates-io-auth-action@v1
+        id: auth
+      - name: Publish kaiten-client
+        run: cargo publish -p kaiten-client
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+      - name: Publish kaiten-cli
+        # the client lands in the sparse index within seconds; retry once
+        # in case the dependency is not yet resolvable
+        run: cargo publish -p kaiten-cli || (sleep 30 && cargo publish -p kaiten-cli)
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
