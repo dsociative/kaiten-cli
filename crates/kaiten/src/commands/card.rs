@@ -156,6 +156,9 @@ fn print_card_kv(card: &kaiten_client::Card) {
     println!("{table}");
 }
 
+// Pure dispatcher: the length comes from destructuring clap variants
+// field-by-field, not from logic.
+#[allow(clippy::too_many_lines)]
 pub async fn run(
     cmd: CardCmd,
     client: &KaitenClient,
@@ -215,6 +218,7 @@ pub async fn run(
             description,
             type_id,
             asap,
+            properties_json,
         } => {
             run_create(
                 client,
@@ -228,6 +232,7 @@ pub async fn run(
                     description,
                     type_id,
                     asap,
+                    properties_json,
                 },
             )
             .await
@@ -238,7 +243,22 @@ pub async fn run(
             description,
             type_id,
             asap,
-        } => run_edit(client, json, &card, title, description, type_id, asap).await,
+            properties_json,
+        } => {
+            run_edit(
+                client,
+                json,
+                &card,
+                CardEditArgs {
+                    title,
+                    description,
+                    type_id,
+                    asap,
+                    properties_json,
+                },
+            )
+            .await
+        }
         CardCmd::Move {
             card,
             column,
@@ -392,6 +412,28 @@ struct CardCreateArgs {
     description: Option<String>,
     type_id: Option<u64>,
     asap: bool,
+    properties_json: Option<String>,
+}
+
+struct CardEditArgs {
+    title: Option<String>,
+    description: Option<String>,
+    type_id: Option<u64>,
+    asap: Option<bool>,
+    properties_json: Option<String>,
+}
+
+/// `--properties-json` must be a JSON OBJECT keyed as id_{property_id}.
+fn parse_properties_json(raw: Option<String>) -> Result<Option<serde_json::Value>, CliError> {
+    let Some(raw) = raw else { return Ok(None) };
+    let value: serde_json::Value = serde_json::from_str(&raw)
+        .map_err(|e| CliError::InvalidArg(format!("--properties-json is not valid JSON: {e}")))?;
+    if !value.is_object() {
+        return Err(CliError::InvalidArg(
+            "--properties-json must be a JSON object like '{\"id_612634\": [18929916]}'".into(),
+        ));
+    }
+    Ok(Some(value))
 }
 
 async fn run_create(
@@ -411,6 +453,7 @@ async fn run_create(
         description: args.description,
         type_id: args.type_id,
         asap: if args.asap { Some(true) } else { None },
+        properties: parse_properties_json(args.properties_json)?,
     };
     let card = client.cards().create(&req).await?;
     if json {
@@ -424,22 +467,25 @@ async fn run_edit(
     client: &KaitenClient,
     json: bool,
     card: &str,
-    title: Option<String>,
-    description: Option<String>,
-    type_id: Option<u64>,
-    asap: Option<bool>,
+    args: CardEditArgs,
 ) -> Result<(), CliError> {
     let card_id = parse_card_ref(card)?;
-    if title.is_none() && description.is_none() && type_id.is_none() && asap.is_none() {
+    if args.title.is_none()
+        && args.description.is_none()
+        && args.type_id.is_none()
+        && args.asap.is_none()
+        && args.properties_json.is_none()
+    {
         return Err(CliError::InvalidArg(
-            "nothing to edit: pass --title/--description/--type/--asap".into(),
+            "nothing to edit: pass --title/--description/--type/--asap/--properties-json".into(),
         ));
     }
     let req = UpdateCard {
-        title,
-        description,
-        type_id,
-        asap,
+        title: args.title,
+        description: args.description,
+        type_id: args.type_id,
+        asap: args.asap,
+        properties: parse_properties_json(args.properties_json)?,
         ..Default::default()
     };
     let card = client.cards().update(card_id, &req).await?;

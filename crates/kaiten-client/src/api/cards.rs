@@ -109,6 +109,10 @@ pub struct CreateCard {
     pub type_id: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub asap: Option<bool>,
+    /// Custom property values keyed as `id_{property_id}`; select values are
+    /// ARRAYS of option ids, date is `{date, time, tzOffset}`, `null` clears.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub properties: Option<serde_json::Value>,
 }
 
 /// Body for PATCH /cards/{id}. Move = update with `column_id`/`lane_id`/`board_id`;
@@ -132,6 +136,10 @@ pub struct UpdateCard {
     /// 2 = archive the card.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub condition: Option<u8>,
+    /// Custom property values keyed as `id_{property_id}`; select values are
+    /// ARRAYS of option ids, date is `{date, time, tzOffset}`, `null` clears.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub properties: Option<serde_json::Value>,
 }
 
 /// Cards resource facade. Construct via [`KaitenClient::cards`].

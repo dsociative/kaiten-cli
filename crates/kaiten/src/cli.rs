@@ -40,6 +40,9 @@ pub enum Commands {
     /// Work with card types
     #[command(name = "card-type", subcommand)]
     CardType(CardTypeCmd),
+    /// Company custom properties (reference for --properties-json)
+    #[command(subcommand)]
+    Property(PropertyCmd),
     /// Raw API request (like `gh api`)
     Api {
         /// HTTP method: GET|POST|PATCH|PUT|DELETE
@@ -73,6 +76,14 @@ pub enum AuthCmd {
     },
     /// Show current authentication info
     Status,
+}
+
+#[derive(Subcommand)]
+pub enum PropertyCmd {
+    /// List company custom properties
+    List,
+    /// List select values of a property
+    Values { property_id: u64 },
 }
 
 #[derive(Subcommand)]
@@ -189,6 +200,10 @@ pub enum CardCmd {
         /// Mark card as ASAP
         #[arg(long)]
         asap: bool,
+        /// Custom property values as JSON, keyed as id_{property_id}
+        /// (see `kaiten property list`), e.g. '{"id_612634": [18929916]}'
+        #[arg(long = "properties-json")]
+        properties_json: Option<String>,
     },
     /// Edit card fields
     Edit {
@@ -202,6 +217,10 @@ pub enum CardCmd {
         /// true|false
         #[arg(long)]
         asap: Option<bool>,
+        /// Custom property values as JSON, keyed as id_{property_id}
+        /// (see `kaiten property list`), e.g. '{"id_612634": [18929916]}'
+        #[arg(long = "properties-json")]
+        properties_json: Option<String>,
     },
     /// Move card to another column/lane/board
     Move {

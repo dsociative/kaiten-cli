@@ -102,6 +102,11 @@ impl KaitenClient {
         crate::api::checklists::Checklists { client: self }
     }
 
+    /// Custom properties facade.
+    pub fn properties(&self) -> crate::api::properties::Properties<'_> {
+        crate::api::properties::Properties { client: self }
+    }
+
     /// Tags and card types facade.
     pub fn tags(&self) -> crate::api::tags::Tags<'_> {
         crate::api::tags::Tags { client: self }

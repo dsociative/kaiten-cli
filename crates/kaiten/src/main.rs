@@ -49,6 +49,7 @@ async fn run(cli: Cli) -> Result<(), CliError> {
                     commands::card::run(cmd, &client, &resolved.defaults, cli.json).await
                 }
                 Commands::Tag(cmd) => commands::tag::run(cmd, &client, cli.json).await,
+                Commands::Property(cmd) => commands::property::run(cmd, &client, cli.json).await,
                 Commands::CardType(cmd) => commands::card_type::run(cmd, &client, cli.json).await,
                 Commands::Api { method, path, data } => {
                     commands::api::run(&client, &method, &path, data).await

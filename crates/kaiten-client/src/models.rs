@@ -278,3 +278,31 @@ pub struct Tag {
     #[serde(default)]
     pub color: Option<i64>,
 }
+
+/// Company-level custom property (GET /company/custom-properties).
+///
+/// Values are written through card create/update `properties`, keyed as
+/// `id_{property_id}`; select values are referenced by id (see
+/// [`SelectValue`]) and passed as an ARRAY even for single select.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CustomProperty {
+    pub id: u64,
+    pub name: String,
+    /// "select", "multi_select", "string", "number", "date", ...
+    #[serde(rename = "type")]
+    pub property_type: String,
+    #[serde(default)]
+    pub archived: Option<bool>,
+}
+
+/// One option of a select-type custom property
+/// (GET /company/custom-properties/{id}/select-values).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SelectValue {
+    pub id: u64,
+    pub value: String,
+    #[serde(default)]
+    pub color: Option<i64>,
+    #[serde(default)]
+    pub sort_order: Option<f64>,
+}

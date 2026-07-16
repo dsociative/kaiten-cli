@@ -161,6 +161,12 @@ pub struct CreateCardParams {
     pub type_id: Option<u64>,
     /// Mark the card as ASAP
     pub asap: Option<bool>,
+    /// Custom property values keyed as "id_{property_id}" (see
+    /// list_custom_properties). Formats: select/multi-select = ARRAY of
+    /// option ids from list_property_select_values, e.g. {"id_612634":
+    /// [18929916]}; string/number/url = plain value; date = {"date":
+    /// "2026-07-16", "time": "19:00", "tzOffset": 180}; null clears
+    pub properties: Option<serde_json::Value>,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
@@ -175,6 +181,18 @@ pub struct UpdateCardParams {
     pub type_id: Option<u64>,
     /// Set or clear the ASAP flag
     pub asap: Option<bool>,
+    /// Custom property values keyed as "id_{property_id}" (see
+    /// list_custom_properties). Formats: select/multi-select = ARRAY of
+    /// option ids from list_property_select_values, e.g. {"id_612634":
+    /// [18929916]}; string/number/url = plain value; date = {"date":
+    /// "2026-07-16", "time": "19:00", "tzOffset": 180}; null clears
+    pub properties: Option<serde_json::Value>,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct ListPropertySelectValuesParams {
+    /// Custom property id (see list_custom_properties)
+    pub property_id: u64,
 }
 
 // The `_id` postfix on every field is the public MCP tool-parameter contract
@@ -451,6 +469,7 @@ impl KaitenMcp {
             description: p.description,
             type_id: p.type_id,
             asap: p.asap,
+            properties: p.properties,
         };
         let card = try_api!(self.client.cards().create(&req).await);
         json_result(&MutationResult::new(&card, &self.web_base))
@@ -468,6 +487,7 @@ impl KaitenMcp {
             description: p.description,
             type_id: p.type_id,
             asap: p.asap,
+            properties: p.properties,
             ..Default::default()
         };
         let card = try_api!(self.client.cards().update(p.card_id, &req).await);
@@ -640,6 +660,25 @@ impl KaitenMcp {
     async fn list_card_types(&self) -> Result<CallToolResult, McpError> {
         let types = try_api!(self.client.tags().card_types().await);
         json_result(&types)
+    }
+
+    #[tool(
+        description = "List company custom properties: id, name, type. Property values are set via create_card/update_card `properties` keyed as id_{property_id}."
+    )]
+    async fn list_custom_properties(&self) -> Result<CallToolResult, McpError> {
+        let props = try_api!(self.client.properties().list().await);
+        json_result(&props)
+    }
+
+    #[tool(
+        description = "List options of a select-type custom property: id and value. Pass ids (as an ARRAY) in the card `properties`, e.g. {\"id_612634\": [18929916]}."
+    )]
+    async fn list_property_select_values(
+        &self,
+        Parameters(p): Parameters<ListPropertySelectValuesParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let values = try_api!(self.client.properties().select_values(p.property_id).await);
+        json_result(&values)
     }
 
     #[tool(
@@ -903,6 +942,7 @@ mod tests {
                 description: None,
                 type_id: None,
                 asap: None,
+                properties: None,
             }))
             .await
             .unwrap();
@@ -1051,6 +1091,7 @@ mod tests {
                 description: None,
                 type_id: None,
                 asap: None,
+                properties: None,
             }))
             .await
             .unwrap();
@@ -1298,8 +1339,36 @@ mod tests {
         assert_eq!(value["mine_card_ids"], serde_json::json!([5, 6]));
     }
 
+    #[tokio::test]
+    async fn update_card_passes_properties_object_through() {
+        let server = MockServer::start().await;
+        Mock::given(method("PATCH"))
+            .and(path("/cards/67089469"))
+            .and(body_json(serde_json::json!({
+                "properties": { "id_612634": [18_929_916] }
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_string(CARD_CREATE_FIXTURE))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let mcp = mcp_for(&server);
+        let result = mcp
+            .update_card(Parameters(super::UpdateCardParams {
+                card_id: 67_089_469,
+                title: None,
+                description: None,
+                type_id: None,
+                asap: None,
+                properties: Some(serde_json::json!({ "id_612634": [18_929_916] })),
+            }))
+            .await
+            .unwrap();
+        assert_ne!(result.is_error, Some(true));
+    }
+
     #[test]
-    fn registers_exactly_23_tools_with_spec_names() {
+    fn registers_exactly_25_tools_with_spec_names() {
         let tools = KaitenMcp::tool_router().list_all();
         let mut names: Vec<String> = tools.iter().map(|t| t.name.to_string()).collect();
         names.sort();
@@ -1327,6 +1396,8 @@ mod tests {
             "remove_card_tag",
             "list_card_types",
             "poll_updates",
+            "list_custom_properties",
+            "list_property_select_values",
         ];
         expected.sort_unstable();
         assert_eq!(names, expected);
