@@ -92,7 +92,9 @@ pub struct CardTag {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CardMember {
-    /// User id.
+    /// User id. ABSENT in PATCH /members/{id} responses (only `user_id`
+    /// is present there), hence the default.
+    #[serde(default)]
     pub id: u64,
     #[serde(default)]
     pub user_id: Option<u64>,
@@ -277,6 +279,32 @@ pub struct Tag {
     pub name: String,
     #[serde(default)]
     pub color: Option<i64>,
+}
+
+/// A time log entry (GET/POST /cards/{id}/time-logs).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct TimeLog {
+    pub id: u64,
+    /// Minutes.
+    pub time_spent: i64,
+    #[serde(default)]
+    pub for_date: Option<String>,
+    #[serde(default)]
+    pub comment: Option<String>,
+    /// User role id; built-in roles have NEGATIVE ids (e.g. -1 = Employee).
+    #[serde(default)]
+    pub role_id: Option<i64>,
+    #[serde(default)]
+    pub author_id: Option<u64>,
+    #[serde(default)]
+    pub created: Option<String>,
+}
+
+/// Company user role (GET /user-roles). Built-in roles have negative ids.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct UserRole {
+    pub id: i64,
+    pub name: String,
 }
 
 /// Company-level custom property (GET /company/custom-properties).

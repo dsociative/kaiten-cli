@@ -267,6 +267,16 @@ pub enum CardCmd {
     },
     /// Release ALL blocks on the card
     Unblock { card: String },
+    /// Delete card PERMANENTLY (unlike archive; asks for confirmation)
+    Delete {
+        card: String,
+        /// Skip the confirmation prompt
+        #[arg(long)]
+        yes: bool,
+    },
+    /// Card time logs
+    #[command(subcommand)]
+    Time(CardTimeCmd),
     /// Card members
     #[command(subcommand)]
     Member(CardMemberCmd),
@@ -282,6 +292,27 @@ pub enum CardCmd {
     /// Card file attachments
     #[command(subcommand)]
     File(CardFileCmd),
+}
+
+#[derive(Subcommand)]
+pub enum CardTimeCmd {
+    /// Log time spent on the card
+    Add {
+        card: String,
+        /// Minutes spent
+        #[arg(long)]
+        minutes: i64,
+        /// Date of the work, YYYY-MM-DD
+        #[arg(long)]
+        date: String,
+        #[arg(long)]
+        comment: Option<String>,
+        /// User role id (default: the company's first role)
+        #[arg(long)]
+        role: Option<i64>,
+    },
+    /// List time logs of the card
+    List { card: String },
 }
 
 #[derive(Subcommand)]
@@ -302,6 +333,15 @@ pub enum CardMemberCmd {
     Add { card: String, user: String },
     /// Remove member (user id or email)
     Remove { card: String, user: String },
+    /// Make a member the responsible person
+    Responsible {
+        card: String,
+        /// User id or email (must already be a member)
+        user: String,
+        /// Demote back to a regular member
+        #[arg(long)]
+        unset: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -314,6 +354,15 @@ pub enum CardCommentCmd {
     },
     /// List comments
     List { card: String },
+    /// Edit a comment
+    Edit {
+        card: String,
+        comment_id: u64,
+        #[arg(long)]
+        body: String,
+    },
+    /// Delete a comment
+    Rm { card: String, comment_id: u64 },
 }
 
 #[derive(Subcommand)]

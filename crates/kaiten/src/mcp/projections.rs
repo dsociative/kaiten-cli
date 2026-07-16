@@ -5,7 +5,9 @@
 //! flatten nested objects to names and ids. Raw JSON stays available through
 //! the CLI (`kaiten card view --json`, `kaiten api`).
 
-use kaiten_client::{Blocker, Card, CardFile, CardMember, Checklist, ChecklistItem, Comment, User};
+use kaiten_client::{
+    Blocker, Card, CardFile, CardMember, Checklist, ChecklistItem, Comment, TimeLog, User,
+};
 
 #[allow(clippy::trivially_copy_pass_by_ref)] // signature dictated by serde
 fn is_false(v: &bool) -> bool {
@@ -357,6 +359,31 @@ impl From<&Comment> for CommentView {
                 .and_then(|u| u.username.clone().or_else(|| u.full_name.clone())),
             created: c.created.clone(),
             edited: c.edited.unwrap_or(false),
+        }
+    }
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct TimeLogView {
+    pub id: u64,
+    /// Minutes.
+    pub time_spent: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub for_date: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub comment: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub author_id: Option<u64>,
+}
+
+impl From<&TimeLog> for TimeLogView {
+    fn from(t: &TimeLog) -> Self {
+        Self {
+            id: t.id,
+            time_spent: t.time_spent,
+            for_date: t.for_date.clone(),
+            comment: t.comment.clone(),
+            author_id: t.author_id,
         }
     }
 }

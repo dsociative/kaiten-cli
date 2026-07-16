@@ -11,7 +11,7 @@ use rmcp::{ErrorData as McpError, ServerHandler, tool, tool_handler, tool_router
 use crate::error::CliError;
 use projections::{
     CardDetail, CardSummary, ChecklistItemView, ChecklistView, CommentResult, CommentView,
-    MemberView, MutationResult, UserView,
+    MemberView, MutationResult, TimeLogView, UserView,
 };
 
 #[derive(Clone)]
@@ -344,6 +344,55 @@ pub struct UnlinkCardsParams {
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct ReleaseBlocksParams {
+    /// Card id
+    pub card_id: u64,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct UpdateCommentParams {
+    /// Card id
+    pub card_id: u64,
+    /// Comment id (see list_comments)
+    pub comment_id: u64,
+    /// New comment text (markdown)
+    pub text: String,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct RemoveCommentParams {
+    /// Card id
+    pub card_id: u64,
+    /// Comment id (see list_comments)
+    pub comment_id: u64,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct SetCardResponsibleParams {
+    /// Card id
+    pub card_id: u64,
+    /// User id (must already be a card member — use add_card_member first)
+    pub user_id: u64,
+    /// false demotes the user back to a regular member
+    pub responsible: Option<bool>,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct AddTimeLogParams {
+    /// Card id
+    pub card_id: u64,
+    /// Time spent in MINUTES
+    pub time_spent: i64,
+    /// Date the work was done, YYYY-MM-DD (defaults to today per Kaiten)
+    pub for_date: String,
+    /// Optional comment
+    pub comment: Option<String>,
+    /// User role id; omitted = the company's first role is used
+    /// (built-in roles are negative, e.g. -1 = Employee)
+    pub role_id: Option<i64>,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct ListTimeLogsParams {
     /// Card id
     pub card_id: u64,
 }
@@ -872,6 +921,90 @@ impl KaitenMcp {
         };
         let card = try_api!(self.client.cards().update(p.card_id, &req).await);
         json_result(&MutationResult::new(&card, &self.web_base))
+    }
+
+    #[tool(description = "Edit an existing comment on a card.")]
+    async fn update_comment(
+        &self,
+        Parameters(p): Parameters<UpdateCommentParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let comment = try_api!(
+            self.client
+                .comments()
+                .update(p.card_id, p.comment_id, &p.text)
+                .await
+        );
+        json_result(&CommentResult::from(&comment))
+    }
+
+    #[tool(description = "Delete a comment from a card.")]
+    async fn remove_comment(
+        &self,
+        Parameters(p): Parameters<RemoveCommentParams>,
+    ) -> Result<CallToolResult, McpError> {
+        try_api!(self.client.comments().remove(p.card_id, p.comment_id).await);
+        json_result(&serde_json::json!({ "removed": true, "comment_id": p.comment_id }))
+    }
+
+    #[tool(
+        description = "Make a card member the responsible person (or demote with responsible=false). The user must already be a member."
+    )]
+    async fn set_card_responsible(
+        &self,
+        Parameters(p): Parameters<SetCardResponsibleParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let member = try_api!(
+            self.client
+                .members()
+                .update_role(p.card_id, p.user_id, p.responsible.unwrap_or(true))
+                .await
+        );
+        json_result(&MemberView::from(&member))
+    }
+
+    #[tool(
+        description = "Log time spent on a card (minutes). role_id defaults to the company's first user role."
+    )]
+    async fn add_time_log(
+        &self,
+        Parameters(p): Parameters<AddTimeLogParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let role_id = if let Some(id) = p.role_id {
+            id
+        } else {
+            let roles = try_api!(self.client.users().roles().await);
+            match roles.first() {
+                Some(role) => role.id,
+                None => {
+                    return Ok(CallToolResult::error(vec![ContentBlock::text(
+                        "no user roles in the company; pass role_id explicitly",
+                    )]));
+                }
+            }
+        };
+        let log = try_api!(
+            self.client
+                .time_logs()
+                .add(
+                    p.card_id,
+                    p.time_spent,
+                    &p.for_date,
+                    role_id,
+                    p.comment.as_deref(),
+                )
+                .await
+        );
+        json_result(&TimeLogView::from(&log))
+    }
+
+    #[tool(description = "List time logs of a card (minutes per entry).")]
+    async fn list_time_logs(
+        &self,
+        Parameters(p): Parameters<ListTimeLogsParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let logs = try_api!(self.client.time_logs().list(p.card_id).await);
+        let views: Vec<TimeLogView> = logs.iter().map(TimeLogView::from).collect();
+        json_result(&views)
     }
 
     #[tool(
@@ -1677,8 +1810,34 @@ mod tests {
         assert_ne!(result.is_error, Some(true));
     }
 
+    #[tokio::test]
+    async fn set_card_responsible_patches_member_type_2() {
+        let server = MockServer::start().await;
+        Mock::given(method("PATCH"))
+            .and(path("/cards/10/members/77"))
+            .and(body_json(serde_json::json!({ "type": 2 })))
+            .respond_with(ResponseTemplate::new(200).set_body_string(
+                r#"{"card_id": 10, "user_id": 77, "type": 2, "updated": "2026-07-16T15:18:12.114Z"}"#,
+            ))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let mcp = mcp_for(&server);
+        let result = mcp
+            .set_card_responsible(Parameters(super::SetCardResponsibleParams {
+                card_id: 10,
+                user_id: 77,
+                responsible: None,
+            }))
+            .await
+            .unwrap();
+        let value: serde_json::Value = serde_json::from_str(&tool_text(&result)).unwrap();
+        assert_eq!(value["responsible"], true);
+    }
+
     #[test]
-    fn registers_exactly_30_tools_with_spec_names() {
+    fn registers_exactly_35_tools_with_spec_names() {
         let tools = KaitenMcp::tool_router().list_all();
         let mut names: Vec<String> = tools.iter().map(|t| t.name.to_string()).collect();
         names.sort();
@@ -1713,6 +1872,11 @@ mod tests {
             "release_blocks",
             "attach_file",
             "detach_file",
+            "update_comment",
+            "remove_comment",
+            "set_card_responsible",
+            "add_time_log",
+            "list_time_logs",
         ];
         expected.sort_unstable();
         assert_eq!(names, expected);

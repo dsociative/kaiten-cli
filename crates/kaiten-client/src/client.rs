@@ -117,6 +117,11 @@ impl KaitenClient {
         crate::api::properties::Properties { client: self }
     }
 
+    /// Card time logs facade.
+    pub fn time_logs(&self) -> crate::api::time_logs::TimeLogs<'_> {
+        crate::api::time_logs::TimeLogs { client: self }
+    }
+
     /// Tags and card types facade.
     pub fn tags(&self) -> crate::api::tags::Tags<'_> {
         crate::api::tags::Tags { client: self }

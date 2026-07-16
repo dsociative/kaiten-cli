@@ -183,6 +183,13 @@ impl Cards<'_> {
             .await
     }
 
+    /// DELETE /cards/{id} — irreversible (unlike archive).
+    pub async fn delete(&self, card_id: u64) -> Result<()> {
+        self.client
+            .request_empty(reqwest::Method::DELETE, &format!("/cards/{card_id}"))
+            .await
+    }
+
     /// PATCH /cards/{id}
     pub async fn update(&self, card_id: u64, req: &UpdateCard) -> Result<Card> {
         let body = serde_json::to_value(req).map_err(|e| KaitenError::Decode {

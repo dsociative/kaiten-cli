@@ -2,7 +2,7 @@ use kaiten_client::{CardFilter, CreateCard, KaitenClient, UpdateCard};
 
 use crate::cli::{
     CardChecklistCmd, CardChecklistItemCmd, CardCmd, CardCommentCmd, CardFileCmd, CardMemberCmd,
-    CardTagCmd,
+    CardTagCmd, CardTimeCmd,
 };
 use crate::config::Defaults;
 use crate::error::CliError;
@@ -292,6 +292,8 @@ pub async fn run(
             blocked_by,
         } => run_unlink(client, json, &card, (child, parent, blocks, blocked_by)).await,
         CardCmd::Unblock { card } => run_unblock(client, json, &card).await,
+        CardCmd::Delete { card, yes } => run_delete(client, json, &card, yes).await,
+        CardCmd::Time(cmd) => run_time(client, json, cmd).await,
         CardCmd::Member(cmd) => run_member(client, json, cmd).await,
         CardCmd::Comment(cmd) => run_comment(client, json, cmd).await,
         CardCmd::Checklist(cmd) => run_checklist(client, json, cmd).await,
@@ -585,6 +587,23 @@ async fn run_member(client: &KaitenClient, json: bool, cmd: CardMemberCmd) -> Re
             println!("removed user {user_id} from card {card_id}");
             Ok(())
         }
+        CardMemberCmd::Responsible { card, user, unset } => {
+            let card_id = parse_card_ref(&card)?;
+            let user_id = resolve_user(client, &user).await?;
+            let member = client
+                .members()
+                .update_role(card_id, user_id, !unset)
+                .await?;
+            if json {
+                return output::print_json(&member);
+            }
+            if unset {
+                println!("user {user_id} is a regular member of card {card_id} again");
+            } else {
+                println!("user {user_id} is now responsible for card {card_id}");
+            }
+            Ok(())
+        }
     }
 }
 
@@ -625,6 +644,28 @@ async fn run_comment(
                 ]);
             }
             println!("{table}");
+            Ok(())
+        }
+        CardCommentCmd::Edit {
+            card,
+            comment_id,
+            body,
+        } => {
+            let card_id = parse_card_ref(&card)?;
+            let comment = client.comments().update(card_id, comment_id, &body).await?;
+            if json {
+                return output::print_json(&comment);
+            }
+            println!("updated comment {} on card {card_id}", comment.id);
+            Ok(())
+        }
+        CardCommentCmd::Rm { card, comment_id } => {
+            let card_id = parse_card_ref(&card)?;
+            client.comments().remove(card_id, comment_id).await?;
+            if json {
+                return output::print_json(&serde_json::json!({ "removed": true }));
+            }
+            println!("removed comment {comment_id} from card {card_id}");
             Ok(())
         }
     }
@@ -835,6 +876,91 @@ async fn run_file(client: &KaitenClient, json: bool, cmd: CardFileCmd) -> Result
                 return output::print_json(&serde_json::json!({ "detached": true }));
             }
             println!("detached file {file_id} from card {card_id}");
+            Ok(())
+        }
+    }
+}
+
+async fn run_delete(
+    client: &KaitenClient,
+    json: bool,
+    card: &str,
+    yes: bool,
+) -> Result<(), CliError> {
+    let card_id = parse_card_ref(card)?;
+    let target = client.cards().get(card_id).await?;
+    if !yes {
+        eprint!(
+            "PERMANENTLY delete card {card_id} \"{}\"? Type the card id to confirm: ",
+            target.title
+        );
+        let mut answer = String::new();
+        std::io::stdin()
+            .read_line(&mut answer)
+            .map_err(CliError::Io)?;
+        if answer.trim() != card_id.to_string() {
+            return Err(CliError::InvalidArg(
+                "confirmation did not match the card id; nothing deleted".into(),
+            ));
+        }
+    }
+    client.cards().delete(card_id).await?;
+    if json {
+        return output::print_json(&serde_json::json!({ "deleted": true, "card_id": card_id }));
+    }
+    println!("deleted card {card_id}");
+    Ok(())
+}
+
+async fn run_time(client: &KaitenClient, json: bool, cmd: CardTimeCmd) -> Result<(), CliError> {
+    match cmd {
+        CardTimeCmd::Add {
+            card,
+            minutes,
+            date,
+            comment,
+            role,
+        } => {
+            let card_id = parse_card_ref(&card)?;
+            let role_id = if let Some(id) = role {
+                id
+            } else {
+                let roles = client.users().roles().await?;
+                roles
+                    .first()
+                    .ok_or_else(|| {
+                        CliError::InvalidArg(
+                            "no user roles in the company; pass --role explicitly".into(),
+                        )
+                    })?
+                    .id
+            };
+            let log = client
+                .time_logs()
+                .add(card_id, minutes, &date, role_id, comment.as_deref())
+                .await?;
+            if json {
+                return output::print_json(&log);
+            }
+            println!("logged {} min on card {card_id} ({})", log.time_spent, date);
+            Ok(())
+        }
+        CardTimeCmd::List { card } => {
+            let card_id = parse_card_ref(&card)?;
+            let logs = client.time_logs().list(card_id).await?;
+            if json {
+                return output::print_json(&logs);
+            }
+            let mut table = output::table(&["ID", "MINUTES", "DATE", "COMMENT"]);
+            for log in &logs {
+                table.add_row(vec![
+                    log.id.to_string(),
+                    log.time_spent.to_string(),
+                    date_cell(log.for_date.as_deref()),
+                    log.comment.clone().unwrap_or_default(),
+                ]);
+            }
+            println!("{table}");
             Ok(())
         }
     }

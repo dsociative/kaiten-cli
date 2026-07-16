@@ -8,4 +8,5 @@ pub mod members;
 pub mod properties;
 pub mod spaces;
 pub mod tags;
+pub mod time_logs;
 pub mod users;

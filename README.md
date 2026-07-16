@@ -87,11 +87,17 @@ kaiten card move 67089469 --column 6308511
 kaiten card archive 67089469
 
 kaiten card member add 67089469 user@example.com   # user id or email
+kaiten card member responsible 67089469 user@example.com
 kaiten card comment add 67089469 --body "Done, please review"
 kaiten card checklist add 67089469 --name "Release steps"
 kaiten card checklist item add 67089469 91011 --text "Bump version"
 kaiten card checklist item check 67089469 91011 121314
 kaiten card tag add 67089469 backend
+
+kaiten card link 67089469 --blocked-by 67089500 --reason "waiting for API"
+kaiten card file add 67089469 ./screenshot.png    # uploads get a PUBLIC url
+kaiten card time add 67089469 --minutes 30 --date 2026-07-16
+kaiten card list --mine --state in-progress --sort updated --desc
 
 kaiten tag list
 kaiten card-type list
@@ -117,7 +123,9 @@ kaiten completion fish > ~/.config/fish/completions/kaiten.fish
 
 ## MCP server
 
-The same binary is an MCP server (stdio transport, 16 tools mirroring the CLI).
+The same binary is an MCP server (stdio transport, 35 tools mirroring the CLI,
+including compact card projections and a cursor-based `poll_updates` for
+event-like agent workflows).
 
 Claude Code:
 
@@ -152,23 +160,24 @@ by area (✅ covered, ◐ partial, — not covered):
 | Auth, current user | ✅ | ✅ |
 | Spaces | ◐ list | ◐ list |
 | Boards, columns, lanes | ◐ read-only (`board list/view`) | ◐ read-only |
-| Cards: create / list / view / edit / move | ✅ | ✅ |
-| Cards: archive | ✅ | — |
-| Cards: delete, batch update, history | — | — |
-| Card list filters | ◐ space/board/column/member/mine/query/tag/type/archived/limit | ◐ same, minus lane/owner/offset |
-| Members: add / remove | ✅ (by id or email) | ✅ (by id only) |
-| Members: change role (responsible) | — | — |
-| Comments: list / add | ✅ | ✅ |
-| Comments: edit / delete | — | — |
-| Checklists: create, add items, check | ✅ | ◐ items only |
-| Tags on cards, tag list | ✅ | — |
-| Card types | ◐ list | — |
-| Users list (id lookup) | ✅ | — |
-| Card links: children / blockers | — | — |
-| Files, external links | — | — |
-| Custom properties | ◐ read via card view | ◐ read via `get_card` |
-| Time logs, sprints, SLA | — | — |
-| Events (webhooks / polling) | — | — |
+| Cards: create / list / view / edit / move / archive | ✅ | ✅ |
+| Cards: delete | ✅ (with confirmation) | — deliberately: irreversible |
+| Cards: batch update, history | — | — |
+| Card list filters | ✅ space/board/column/member/mine/query/tag/type/archived/state/dates/sort/offset | ✅ same + lane/owner |
+| Members: add / remove / set responsible | ✅ (by id or email) | ✅ (by id; `list_users` resolves) |
+| Comments: list / add / edit / delete | ✅ | ✅ |
+| Checklists: create, add items, check | ✅ | ✅ |
+| Tags on cards, tag list | ✅ | ✅ |
+| Card types | ◐ list | ◐ list |
+| Users list (id lookup) | ✅ | ✅ |
+| Card links: children / parents / blockers | ✅ `card link/unlink/unblock` | ✅ `link_cards` etc. |
+| Files: attach / detach | ✅ (uploads get a PUBLIC url!) | ✅ |
+| External links | — | — |
+| Custom properties: reference + set values | ✅ `property list/values`, `--properties-json` | ✅ two tools + `properties` |
+| Time logs | ✅ `card time add/list` | ✅ |
+| Events: polling for changes | — | ✅ `poll_updates` (cursor-based) |
+| Events: webhooks | — deliberately (needs a public URL) | — |
+| Sprints, SLA, location history | — | — |
 | Raw API escape hatch | ✅ `kaiten api` | — |
 
 Not covered and currently out of scope: administration (space/board CRUD,
