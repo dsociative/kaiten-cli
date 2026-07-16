@@ -173,7 +173,13 @@ pub async fn run(
             tag,
             type_id,
             archived,
+            states,
+            updated_after,
+            created_after,
+            sort,
+            desc,
             limit,
+            offset,
         } => {
             run_list(
                 client,
@@ -189,7 +195,13 @@ pub async fn run(
                     tag,
                     type_id,
                     archived,
+                    states,
+                    updated_after,
+                    created_after,
+                    sort,
+                    desc,
                     limit,
+                    offset,
                 },
             )
             .await
@@ -251,7 +263,13 @@ struct CardListFilters {
     tag: Option<String>,
     type_id: Option<u64>,
     archived: bool,
+    states: Vec<crate::cli::CardState>,
+    updated_after: Option<String>,
+    created_after: Option<String>,
+    sort: Option<String>,
+    desc: bool,
     limit: u32,
+    offset: Option<u32>,
 }
 
 async fn run_list(
@@ -283,6 +301,18 @@ async fn run_list(
     filter.tag = filters.tag;
     filter.type_id = filters.type_id;
     filter.archived = Some(filters.archived);
+    filter.states = filters
+        .states
+        .iter()
+        .map(|s| crate::cli::CardState::as_u8(*s))
+        .collect();
+    filter.updated_after = filters.updated_after;
+    filter.created_after = filters.created_after;
+    filter.order_by = filters.sort;
+    if filter.order_by.is_some() {
+        filter.order_direction = Some(if filters.desc { "desc" } else { "asc" }.to_string());
+    }
+    filter.offset = filters.offset;
     if let Some(member_id) = filters.member {
         filter.member_ids.push(member_id);
     }

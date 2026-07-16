@@ -31,6 +31,29 @@ fn to_query_is_empty_for_default_filter() {
     assert!(CardFilter::default().to_query().is_empty());
 }
 
+#[test]
+fn to_query_serializes_states_dates_and_ordering() {
+    let filter = CardFilter {
+        states: vec![1, 2],
+        updated_after: Some("2026-07-01T00:00:00Z".to_string()),
+        created_before: Some("2026-07-15T00:00:00Z".to_string()),
+        order_by: Some("updated".to_string()),
+        order_direction: Some("asc".to_string()),
+        additional_card_fields: Some("description".to_string()),
+        offset: Some(100),
+        ..Default::default()
+    };
+    let q = filter.to_query();
+    let has = |k: &str, v: &str| q.contains(&(k.to_string(), v.to_string()));
+    assert!(has("states", "1,2"), "comma-joined states: {q:?}");
+    assert!(has("updated_after", "2026-07-01T00:00:00Z"));
+    assert!(has("created_before", "2026-07-15T00:00:00Z"));
+    assert!(has("order_by", "updated"));
+    assert!(has("order_direction", "asc"));
+    assert!(has("additional_card_fields", "description"));
+    assert!(has("offset", "100"));
+}
+
 #[tokio::test]
 async fn list_sends_filter_query_params_and_parses_list_card() {
     let server = MockServer::start().await;

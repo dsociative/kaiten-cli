@@ -68,6 +68,25 @@ pub struct GetBoardParams {
     pub board_id: u64,
 }
 
+/// Card state name accepted by list_cards/poll_updates filters.
+#[derive(Debug, Clone, Copy, serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CardStateParam {
+    Queued,
+    InProgress,
+    Done,
+}
+
+impl CardStateParam {
+    fn as_u8(self) -> u8 {
+        match self {
+            Self::Queued => 1,
+            Self::InProgress => 2,
+            Self::Done => 3,
+        }
+    }
+}
+
 #[derive(Debug, Default, serde::Deserialize, schemars::JsonSchema)]
 pub struct ListCardsParams {
     /// Filter by space id
@@ -76,10 +95,14 @@ pub struct ListCardsParams {
     pub board_id: Option<u64>,
     /// Filter by column id
     pub column_id: Option<u64>,
+    /// Filter by lane id
+    pub lane_id: Option<u64>,
     /// Full-text search query
     pub query: Option<String>,
     /// Filter by member user id
     pub member_id: Option<u64>,
+    /// Filter by owner user id
+    pub owner_id: Option<u64>,
     /// If true, only cards where the current user is a member
     pub mine: Option<bool>,
     /// Filter by tag name
@@ -88,8 +111,20 @@ pub struct ListCardsParams {
     pub type_id: Option<u64>,
     /// Include archived cards
     pub archived: Option<bool>,
-    /// Max number of cards to return (default 50)
+    /// Filter by card states (queued/in_progress/done)
+    pub states: Option<Vec<CardStateParam>>,
+    /// Only cards updated at/after this ISO 8601 time (inclusive bound)
+    pub updated_after: Option<String>,
+    /// Only cards created at/after this ISO 8601 time (inclusive bound)
+    pub created_after: Option<String>,
+    /// Card field to sort by, e.g. "updated" or "created"
+    pub order_by: Option<String>,
+    /// Sort direction: "asc" or "desc"
+    pub order_direction: Option<String>,
+    /// Max number of cards to return (default 50; the server caps at 100)
     pub limit: Option<u32>,
+    /// Number of cards to skip — pagination beyond the 100-card server cap
+    pub offset: Option<u32>,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
@@ -257,12 +292,25 @@ impl KaitenMcp {
             space_id: p.space_id,
             board_id: p.board_id,
             column_id: p.column_id,
+            lane_id: p.lane_id,
             query: p.query,
             member_ids,
+            owner_id: p.owner_id,
             tag: p.tag,
             type_id: p.type_id,
             archived: Some(p.archived.unwrap_or(false)),
+            states: p
+                .states
+                .unwrap_or_default()
+                .into_iter()
+                .map(CardStateParam::as_u8)
+                .collect(),
+            updated_after: p.updated_after,
+            created_after: p.created_after,
+            order_by: p.order_by,
+            order_direction: p.order_direction,
             limit: Some(p.limit.unwrap_or(50)),
+            offset: p.offset,
             ..Default::default()
         };
         let cards = try_api!(self.client.cards().list(&filter).await);
@@ -605,6 +653,39 @@ mod tests {
         let result = mcp
             .list_cards(Parameters(ListCardsParams {
                 mine: Some(true),
+                ..Default::default()
+            }))
+            .await
+            .unwrap();
+        assert_eq!(tool_text(&result).trim(), "[]");
+    }
+
+    #[tokio::test]
+    async fn list_cards_passes_states_dates_sort_and_offset() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/cards"))
+            .and(query_param("states", "1,2"))
+            .and(query_param("updated_after", "2026-07-01T00:00:00Z"))
+            .and(query_param("order_by", "updated"))
+            .and(query_param("order_direction", "asc"))
+            .and(query_param("offset", "100"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("[]"))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let mcp = mcp_for(&server);
+        let result = mcp
+            .list_cards(Parameters(ListCardsParams {
+                states: Some(vec![
+                    super::CardStateParam::Queued,
+                    super::CardStateParam::InProgress,
+                ]),
+                updated_after: Some("2026-07-01T00:00:00Z".to_string()),
+                order_by: Some("updated".to_string()),
+                order_direction: Some("asc".to_string()),
+                offset: Some(100),
                 ..Default::default()
             }))
             .await

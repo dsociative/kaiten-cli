@@ -93,6 +93,24 @@ pub enum BoardCmd {
     View { board_id: u64 },
 }
 
+/// Card state for `card list --state` (API values 1/2/3).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
+pub enum CardState {
+    Queued,
+    InProgress,
+    Done,
+}
+
+impl CardState {
+    pub fn as_u8(self) -> u8 {
+        match self {
+            Self::Queued => 1,
+            Self::InProgress => 2,
+            Self::Done => 3,
+        }
+    }
+}
+
 #[derive(Subcommand)]
 pub enum CardCmd {
     /// List cards
@@ -124,9 +142,27 @@ pub enum CardCmd {
         /// Include only archived cards
         #[arg(long)]
         archived: bool,
-        /// Max number of cards
+        /// Filter by state (repeatable)
+        #[arg(long = "state", value_enum)]
+        states: Vec<CardState>,
+        /// Only cards updated at/after this ISO 8601 time (inclusive)
+        #[arg(long)]
+        updated_after: Option<String>,
+        /// Only cards created at/after this ISO 8601 time (inclusive)
+        #[arg(long)]
+        created_after: Option<String>,
+        /// Sort by a card field, e.g. "updated" or "created"
+        #[arg(long)]
+        sort: Option<String>,
+        /// Sort descending (with --sort)
+        #[arg(long, requires = "sort")]
+        desc: bool,
+        /// Max number of cards (the server caps this at 100)
         #[arg(long, default_value_t = 50)]
         limit: u32,
+        /// Number of cards to skip (pagination; use with --limit)
+        #[arg(long)]
+        offset: Option<u32>,
     },
     /// Show one card (accepts id or browser URL)
     View {

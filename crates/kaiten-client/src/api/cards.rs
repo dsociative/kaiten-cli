@@ -3,6 +3,8 @@ use crate::error::{KaitenError, Result};
 use crate::models::Card;
 
 /// Filter for GET /cards. `None`/empty fields are omitted from the query.
+///
+/// The server silently caps `limit` at 100 — page with `offset` for more.
 #[derive(Debug, Default, Clone)]
 pub struct CardFilter {
     pub space_id: Option<u64>,
@@ -18,6 +20,19 @@ pub struct CardFilter {
     pub type_id: Option<u64>,
     pub archived: Option<bool>,
     pub condition: Option<u8>,
+    /// Card states, comma-separated: 1 = queued, 2 = in progress, 3 = done.
+    pub states: Vec<u8>,
+    /// ISO 8601; the bound is INCLUSIVE (`updated >= updated_after`).
+    pub updated_after: Option<String>,
+    pub updated_before: Option<String>,
+    pub created_after: Option<String>,
+    pub created_before: Option<String>,
+    /// Card field to sort by, e.g. "updated" or "comment_last_added_at".
+    pub order_by: Option<String>,
+    /// "asc" or "desc".
+    pub order_direction: Option<String>,
+    /// Extra fields to include in list responses; only "description" is supported.
+    pub additional_card_fields: Option<String>,
     pub limit: Option<u32>,
     pub offset: Option<u32>,
 }
@@ -51,6 +66,27 @@ impl CardFilter {
         push(&mut q, "type_id", self.type_id.as_ref());
         push(&mut q, "archived", self.archived.as_ref());
         push(&mut q, "condition", self.condition.as_ref());
+        if !self.states.is_empty() {
+            q.push((
+                "states".to_string(),
+                self.states
+                    .iter()
+                    .map(u8::to_string)
+                    .collect::<Vec<_>>()
+                    .join(","),
+            ));
+        }
+        push(&mut q, "updated_after", self.updated_after.as_ref());
+        push(&mut q, "updated_before", self.updated_before.as_ref());
+        push(&mut q, "created_after", self.created_after.as_ref());
+        push(&mut q, "created_before", self.created_before.as_ref());
+        push(&mut q, "order_by", self.order_by.as_ref());
+        push(&mut q, "order_direction", self.order_direction.as_ref());
+        push(
+            &mut q,
+            "additional_card_fields",
+            self.additional_card_fields.as_ref(),
+        );
         push(&mut q, "limit", self.limit.as_ref());
         push(&mut q, "offset", self.offset.as_ref());
         q
