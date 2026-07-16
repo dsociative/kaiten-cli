@@ -29,7 +29,7 @@ jobs:
             os: windows-latest
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
@@ -53,7 +53,7 @@ jobs:
           cd target/${{ matrix.target }}/release
           Compress-Archive -Path kaiten.exe -DestinationPath "kaiten-${{ github.ref_name }}-${{ matrix.target }}.zip"
       - name: Attest build provenance
-        uses: actions/attest-build-provenance@v3
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: target/${{ matrix.target }}/release/kaiten-${{ github.ref_name }}-${{ matrix.target }}.*
       - name: Upload to release

@@ -9,7 +9,7 @@ use std::time::Duration;
 
 const READ_TIMEOUT: Duration = Duration::from_secs(20);
 
-const EXPECTED_TOOLS: [&str; 16] = [
+const EXPECTED_TOOLS: [&str; 35] = [
     "current_user",
     "list_spaces",
     "list_boards",
@@ -19,13 +19,32 @@ const EXPECTED_TOOLS: [&str; 16] = [
     "create_card",
     "update_card",
     "move_card",
+    "archive_card",
     "add_card_member",
     "remove_card_member",
+    "list_users",
     "list_comments",
     "add_comment",
     "list_checklists",
+    "add_checklist",
     "add_checklist_item",
     "set_checklist_item_checked",
+    "add_card_tag",
+    "remove_card_tag",
+    "list_card_types",
+    "poll_updates",
+    "list_custom_properties",
+    "list_property_select_values",
+    "link_cards",
+    "unlink_cards",
+    "release_blocks",
+    "attach_file",
+    "detach_file",
+    "update_comment",
+    "remove_comment",
+    "set_card_responsible",
+    "add_time_log",
+    "list_time_logs",
 ];
 
 struct McpProc {
@@ -111,7 +130,7 @@ impl Drop for McpProc {
 }
 
 #[test]
-fn mcp_stdio_initialize_and_list_all_16_tools() {
+fn mcp_stdio_initialize_and_list_all_tools() {
     let mut mcp = McpProc::spawn();
 
     mcp.send(&serde_json::json!({
@@ -146,7 +165,12 @@ fn mcp_stdio_initialize_and_list_all_16_tools() {
         .unwrap_or_else(|| panic!("tools/list must return an array, got: {listed}"));
 
     let names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
-    assert_eq!(names.len(), 16, "expected exactly 16 tools, got: {names:?}");
+    assert_eq!(
+        names.len(),
+        EXPECTED_TOOLS.len(),
+        "expected exactly {} tools, got: {names:?}",
+        EXPECTED_TOOLS.len()
+    );
     for expected in EXPECTED_TOOLS {
         assert!(
             names.contains(&expected),

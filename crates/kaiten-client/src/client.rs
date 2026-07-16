@@ -51,6 +51,12 @@ impl KaitenClient {
         })
     }
 
+    /// Base API URL this client talks to,
+    /// e.g. "https://mycompany.kaiten.ru/api/latest".
+    pub fn base_url(&self) -> &url::Url {
+        &self.base_url
+    }
+
     /// Raw request for `kaiten api`: `path` starts with "/", query is already in `path`.
     pub async fn raw(
         &self,
@@ -94,6 +100,26 @@ impl KaitenClient {
     /// Checklists resource facade.
     pub fn checklists(&self) -> crate::api::checklists::Checklists<'_> {
         crate::api::checklists::Checklists { client: self }
+    }
+
+    /// Card file attachments facade.
+    pub fn files(&self) -> crate::api::files::Files<'_> {
+        crate::api::files::Files { client: self }
+    }
+
+    /// Card links facade (children hierarchy, blockers).
+    pub fn links(&self) -> crate::api::links::Links<'_> {
+        crate::api::links::Links { client: self }
+    }
+
+    /// Custom properties facade.
+    pub fn properties(&self) -> crate::api::properties::Properties<'_> {
+        crate::api::properties::Properties { client: self }
+    }
+
+    /// Card time logs facade.
+    pub fn time_logs(&self) -> crate::api::time_logs::TimeLogs<'_> {
+        crate::api::time_logs::TimeLogs { client: self }
     }
 
     /// Tags and card types facade.
@@ -188,6 +214,95 @@ impl KaitenClient {
         }
     }
 
+    /// Multipart upload core (PUT with a single binary `field`).
+    ///
+    /// Separate from `send_with_retry` because `reqwest::multipart::Form`
+    /// is not cloneable — the whole file is read into memory by the caller
+    /// and the form is rebuilt from the bytes on every 429 retry. The retry
+    /// policy, tracing and error mapping mirror `send_with_retry`.
+    pub(crate) async fn send_multipart_put(
+        &self,
+        path: &str,
+        field: &'static str,
+        file_name: String,
+        bytes: Vec<u8>,
+    ) -> Result<String> {
+        let url = format!("{}{}", self.base_url.as_str().trim_end_matches('/'), path);
+        let mut retries = 0u32;
+        loop {
+            let part = reqwest::multipart::Part::bytes(bytes.clone()).file_name(file_name.clone());
+            let form = reqwest::multipart::Form::new().part(field, part);
+            let started = Instant::now();
+            let resp = self
+                .http
+                .put(url.as_str())
+                .bearer_auth(&self.token)
+                .multipart(form)
+                .send()
+                .await?;
+            let status = resp.status();
+            let elapsed = started.elapsed();
+            tracing::debug!(
+                method = "PUT(multipart)",
+                path,
+                status = status.as_u16(),
+                elapsed_ms = elapsed.as_secs() * 1000 + u64::from(elapsed.subsec_millis()),
+                "http request"
+            );
+
+            if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+                let reset_secs_raw = resp
+                    .headers()
+                    .get("X-RateLimit-Reset")
+                    .and_then(|v| v.to_str().ok())
+                    .and_then(|v| v.parse::<u64>().ok());
+                retries += 1;
+                if retries > MAX_RETRIES {
+                    return Err(KaitenError::RateLimited {
+                        retry_after_secs: reset_secs_raw.unwrap_or(1),
+                    });
+                }
+                let wait_secs = retry_wait_secs(reset_secs_raw);
+                tracing::debug!(wait_secs, retry = retries, "rate limited, retrying");
+                tokio::time::sleep(Duration::from_secs(wait_secs)).await;
+                continue;
+            }
+
+            let text = resp.text().await?;
+            tracing::trace!(body = %text, "response body");
+            if !status.is_success() {
+                let message = serde_json::from_str::<serde_json::Value>(&text)
+                    .ok()
+                    .and_then(|v| v.get("message").and_then(|m| m.as_str()).map(str::to_owned))
+                    .unwrap_or_else(|| {
+                        if text.trim().is_empty() {
+                            status
+                                .canonical_reason()
+                                .unwrap_or("unknown error")
+                                .to_owned()
+                        } else {
+                            text.clone()
+                        }
+                    });
+                return Err(KaitenError::Api {
+                    status: status.as_u16(),
+                    message,
+                    body: text,
+                });
+            }
+            return Ok(text);
+        }
+    }
+
+    /// Decode a response body the same way `request<T>` does.
+    pub(crate) fn decode<T: DeserializeOwned>(text: &str) -> Result<T> {
+        let mut de = serde_json::Deserializer::from_str(text);
+        serde_path_to_error::deserialize(&mut de).map_err(|e| KaitenError::Decode {
+            path: e.path().to_string(),
+            source: e.into_inner(),
+        })
+    }
+
     pub(crate) async fn request<T: DeserializeOwned>(
         &self,
         method: Method,
@@ -196,11 +311,7 @@ impl KaitenClient {
         body: Option<serde_json::Value>,
     ) -> Result<T> {
         let (_status, text) = self.send_with_retry(method, path, query, body).await?;
-        let mut de = serde_json::Deserializer::from_str(&text);
-        serde_path_to_error::deserialize(&mut de).map_err(|e| KaitenError::Decode {
-            path: e.path().to_string(),
-            source: e.into_inner(),
-        })
+        Self::decode(&text)
     }
 
     /// Perform a request whose response body may be empty and is ignored

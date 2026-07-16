@@ -97,3 +97,33 @@ async fn remove_maps_403_with_empty_body_to_api_error() {
         other => panic!("expected Api error, got: {other:?}"),
     }
 }
+
+/// PATCH /cards/{id}/members/{user_id} responds WITHOUT an `id` field
+/// (live-verified) — the model must still parse.
+#[tokio::test]
+async fn update_role_parses_idless_response() {
+    use wiremock::matchers::{body_json, method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let server = MockServer::start().await;
+    Mock::given(method("PATCH"))
+        .and(path("/cards/67089309/members/1068514"))
+        .and(body_json(serde_json::json!({ "type": 2 })))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            r#"{"card_id": 67089309, "user_id": 1068514, "type": 2,
+                "created": "2026-07-16T13:44:58.899Z"}"#,
+            "application/json",
+        ))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = kaiten_client::KaitenClient::new(&server.uri(), "test-token").unwrap();
+    let member = client
+        .members()
+        .update_role(67_089_309, 1_068_514, true)
+        .await
+        .unwrap();
+    assert_eq!(member.user_id, Some(1_068_514));
+    assert_eq!(member.member_type, Some(2));
+}

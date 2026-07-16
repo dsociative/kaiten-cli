@@ -31,4 +31,26 @@ impl Comments<'_> {
             )
             .await
     }
+
+    /// PATCH /cards/{id}/comments/{comment_id}
+    pub async fn update(&self, card_id: u64, comment_id: u64, text: &str) -> Result<Comment> {
+        self.client
+            .request(
+                reqwest::Method::PATCH,
+                &format!("/cards/{card_id}/comments/{comment_id}"),
+                None,
+                Some(serde_json::json!({ "text": text })),
+            )
+            .await
+    }
+
+    /// DELETE /cards/{id}/comments/{comment_id}
+    pub async fn remove(&self, card_id: u64, comment_id: u64) -> Result<()> {
+        self.client
+            .request_empty(
+                reqwest::Method::DELETE,
+                &format!("/cards/{card_id}/comments/{comment_id}"),
+            )
+            .await
+    }
 }

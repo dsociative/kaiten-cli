@@ -1,6 +1,6 @@
 use crate::client::KaitenClient;
 use crate::error::Result;
-use crate::models::User;
+use crate::models::{User, UserRole};
 
 /// Users resource facade. Construct via [`KaitenClient::users`].
 pub struct Users<'a> {
@@ -19,6 +19,14 @@ impl Users<'_> {
     pub async fn list(&self) -> Result<Vec<User>> {
         self.client
             .request(reqwest::Method::GET, "/users", None, None)
+            .await
+    }
+
+    /// GET /user-roles — company user roles (time logs require a role_id;
+    /// built-in roles have negative ids, e.g. -1 = Employee).
+    pub async fn roles(&self) -> Result<Vec<UserRole>> {
+        self.client
+            .request(reqwest::Method::GET, "/user-roles", None, None)
             .await
     }
 }

@@ -20,7 +20,10 @@ async fn current_hits_users_current_with_bearer_token() {
     let user = client.users().current().await.unwrap();
 
     assert_eq!(user.id, 1_068_514);
-    assert_eq!(user.uid, "0abd61ea-9dc5-40eb-b0a9-0d452ba1d8a6");
+    assert_eq!(
+        user.uid.as_deref(),
+        Some("0abd61ea-9dc5-40eb-b0a9-0d452ba1d8a6")
+    );
     assert_eq!(user.full_name.as_deref(), Some("dxmuser"));
     assert_eq!(user.email.as_deref(), Some("user@example.com"));
     assert_eq!(user.activated, Some(true));

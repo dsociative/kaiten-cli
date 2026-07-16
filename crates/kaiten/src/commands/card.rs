@@ -1,7 +1,8 @@
 use kaiten_client::{CardFilter, CreateCard, KaitenClient, UpdateCard};
 
 use crate::cli::{
-    CardChecklistCmd, CardChecklistItemCmd, CardCmd, CardCommentCmd, CardMemberCmd, CardTagCmd,
+    CardChecklistCmd, CardChecklistItemCmd, CardCmd, CardCommentCmd, CardFileCmd, CardMemberCmd,
+    CardTagCmd, CardTimeCmd,
 };
 use crate::config::Defaults;
 use crate::error::CliError;
@@ -156,6 +157,9 @@ fn print_card_kv(card: &kaiten_client::Card) {
     println!("{table}");
 }
 
+// Pure dispatcher: the length comes from destructuring clap variants
+// field-by-field, not from logic.
+#[allow(clippy::too_many_lines)]
 pub async fn run(
     cmd: CardCmd,
     client: &KaitenClient,
@@ -173,7 +177,13 @@ pub async fn run(
             tag,
             type_id,
             archived,
+            states,
+            updated_after,
+            created_after,
+            sort,
+            desc,
             limit,
+            offset,
         } => {
             run_list(
                 client,
@@ -189,7 +199,13 @@ pub async fn run(
                     tag,
                     type_id,
                     archived,
+                    states,
+                    updated_after,
+                    created_after,
+                    sort,
+                    desc,
                     limit,
+                    offset,
                 },
             )
             .await
@@ -203,6 +219,7 @@ pub async fn run(
             description,
             type_id,
             asap,
+            properties_json,
         } => {
             run_create(
                 client,
@@ -216,6 +233,7 @@ pub async fn run(
                     description,
                     type_id,
                     asap,
+                    properties_json,
                 },
             )
             .await
@@ -226,7 +244,22 @@ pub async fn run(
             description,
             type_id,
             asap,
-        } => run_edit(client, json, &card, title, description, type_id, asap).await,
+            properties_json,
+        } => {
+            run_edit(
+                client,
+                json,
+                &card,
+                CardEditArgs {
+                    title,
+                    description,
+                    type_id,
+                    asap,
+                    properties_json,
+                },
+            )
+            .await
+        }
         CardCmd::Move {
             card,
             column,
@@ -234,10 +267,38 @@ pub async fn run(
             board,
         } => run_move(client, json, &card, column, lane, board).await,
         CardCmd::Archive { card } => run_archive(client, json, &card).await,
+        CardCmd::Link {
+            card,
+            child,
+            parent,
+            blocks,
+            blocked_by,
+            reason,
+        } => {
+            run_link(
+                client,
+                json,
+                &card,
+                (child, parent, blocks, blocked_by),
+                reason,
+            )
+            .await
+        }
+        CardCmd::Unlink {
+            card,
+            child,
+            parent,
+            blocks,
+            blocked_by,
+        } => run_unlink(client, json, &card, (child, parent, blocks, blocked_by)).await,
+        CardCmd::Unblock { card } => run_unblock(client, json, &card).await,
+        CardCmd::Delete { card, yes } => run_delete(client, json, &card, yes).await,
+        CardCmd::Time(cmd) => run_time(client, json, cmd).await,
         CardCmd::Member(cmd) => run_member(client, json, cmd).await,
         CardCmd::Comment(cmd) => run_comment(client, json, cmd).await,
         CardCmd::Checklist(cmd) => run_checklist(client, json, cmd).await,
         CardCmd::Tag(cmd) => run_tag(client, json, cmd).await,
+        CardCmd::File(cmd) => run_file(client, json, cmd).await,
     }
 }
 
@@ -251,7 +312,13 @@ struct CardListFilters {
     tag: Option<String>,
     type_id: Option<u64>,
     archived: bool,
+    states: Vec<crate::cli::CardState>,
+    updated_after: Option<String>,
+    created_after: Option<String>,
+    sort: Option<String>,
+    desc: bool,
     limit: u32,
+    offset: Option<u32>,
 }
 
 async fn run_list(
@@ -283,6 +350,18 @@ async fn run_list(
     filter.tag = filters.tag;
     filter.type_id = filters.type_id;
     filter.archived = Some(filters.archived);
+    filter.states = filters
+        .states
+        .iter()
+        .map(|s| crate::cli::CardState::as_u8(*s))
+        .collect();
+    filter.updated_after = filters.updated_after;
+    filter.created_after = filters.created_after;
+    filter.order_by = filters.sort;
+    if filter.order_by.is_some() {
+        filter.order_direction = Some(if filters.desc { "desc" } else { "asc" }.to_string());
+    }
+    filter.offset = filters.offset;
     if let Some(member_id) = filters.member {
         filter.member_ids.push(member_id);
     }
@@ -362,6 +441,28 @@ struct CardCreateArgs {
     description: Option<String>,
     type_id: Option<u64>,
     asap: bool,
+    properties_json: Option<String>,
+}
+
+struct CardEditArgs {
+    title: Option<String>,
+    description: Option<String>,
+    type_id: Option<u64>,
+    asap: Option<bool>,
+    properties_json: Option<String>,
+}
+
+/// `--properties-json` must be a JSON OBJECT keyed as id_{property_id}.
+fn parse_properties_json(raw: Option<String>) -> Result<Option<serde_json::Value>, CliError> {
+    let Some(raw) = raw else { return Ok(None) };
+    let value: serde_json::Value = serde_json::from_str(&raw)
+        .map_err(|e| CliError::InvalidArg(format!("--properties-json is not valid JSON: {e}")))?;
+    if !value.is_object() {
+        return Err(CliError::InvalidArg(
+            "--properties-json must be a JSON object like '{\"id_612634\": [18929916]}'".into(),
+        ));
+    }
+    Ok(Some(value))
 }
 
 async fn run_create(
@@ -381,6 +482,7 @@ async fn run_create(
         description: args.description,
         type_id: args.type_id,
         asap: if args.asap { Some(true) } else { None },
+        properties: parse_properties_json(args.properties_json)?,
     };
     let card = client.cards().create(&req).await?;
     if json {
@@ -394,22 +496,25 @@ async fn run_edit(
     client: &KaitenClient,
     json: bool,
     card: &str,
-    title: Option<String>,
-    description: Option<String>,
-    type_id: Option<u64>,
-    asap: Option<bool>,
+    args: CardEditArgs,
 ) -> Result<(), CliError> {
     let card_id = parse_card_ref(card)?;
-    if title.is_none() && description.is_none() && type_id.is_none() && asap.is_none() {
+    if args.title.is_none()
+        && args.description.is_none()
+        && args.type_id.is_none()
+        && args.asap.is_none()
+        && args.properties_json.is_none()
+    {
         return Err(CliError::InvalidArg(
-            "nothing to edit: pass --title/--description/--type/--asap".into(),
+            "nothing to edit: pass --title/--description/--type/--asap/--properties-json".into(),
         ));
     }
     let req = UpdateCard {
-        title,
-        description,
-        type_id,
-        asap,
+        title: args.title,
+        description: args.description,
+        type_id: args.type_id,
+        asap: args.asap,
+        properties: parse_properties_json(args.properties_json)?,
         ..Default::default()
     };
     let card = client.cards().update(card_id, &req).await?;
@@ -482,6 +587,23 @@ async fn run_member(client: &KaitenClient, json: bool, cmd: CardMemberCmd) -> Re
             println!("removed user {user_id} from card {card_id}");
             Ok(())
         }
+        CardMemberCmd::Responsible { card, user, unset } => {
+            let card_id = parse_card_ref(&card)?;
+            let user_id = resolve_user(client, &user).await?;
+            let member = client
+                .members()
+                .update_role(card_id, user_id, !unset)
+                .await?;
+            if json {
+                return output::print_json(&member);
+            }
+            if unset {
+                println!("user {user_id} is a regular member of card {card_id} again");
+            } else {
+                println!("user {user_id} is now responsible for card {card_id}");
+            }
+            Ok(())
+        }
     }
 }
 
@@ -522,6 +644,28 @@ async fn run_comment(
                 ]);
             }
             println!("{table}");
+            Ok(())
+        }
+        CardCommentCmd::Edit {
+            card,
+            comment_id,
+            body,
+        } => {
+            let card_id = parse_card_ref(&card)?;
+            let comment = client.comments().update(card_id, comment_id, &body).await?;
+            if json {
+                return output::print_json(&comment);
+            }
+            println!("updated comment {} on card {card_id}", comment.id);
+            Ok(())
+        }
+        CardCommentCmd::Rm { card, comment_id } => {
+            let card_id = parse_card_ref(&card)?;
+            client.comments().remove(card_id, comment_id).await?;
+            if json {
+                return output::print_json(&serde_json::json!({ "removed": true }));
+            }
+            println!("removed comment {comment_id} from card {card_id}");
             Ok(())
         }
     }
@@ -593,6 +737,232 @@ async fn run_checklist(
                 item_id,
             } => set_item_checked(client, json, &card, checklist_id, item_id, false).await,
         },
+    }
+}
+
+/// (child, parent, blocks, blocked_by) — exactly one must be set
+/// (clap's arg group guarantees at most one).
+type LinkFlags = (Option<u64>, Option<u64>, Option<u64>, Option<u64>);
+
+async fn run_link(
+    client: &KaitenClient,
+    json: bool,
+    card: &str,
+    flags: LinkFlags,
+    reason: Option<String>,
+) -> Result<(), CliError> {
+    let card_id = parse_card_ref(card)?;
+    let (child, parent, blocks, blocked_by) = flags;
+    let described = match (child, parent, blocks, blocked_by) {
+        (Some(target), None, None, None) => {
+            client.links().add_child(card_id, target).await?;
+            format!("card {target} is now a child of {card_id}")
+        }
+        (None, Some(target), None, None) => {
+            client.links().add_child(target, card_id).await?;
+            format!("card {target} is now a parent of {card_id}")
+        }
+        (None, None, Some(target), None) => {
+            client
+                .links()
+                .add_blocker(target, Some(card_id), reason.as_deref())
+                .await?;
+            format!("card {card_id} now blocks {target}")
+        }
+        (None, None, None, Some(target)) => {
+            client
+                .links()
+                .add_blocker(card_id, Some(target), reason.as_deref())
+                .await?;
+            format!("card {card_id} is now blocked by {target}")
+        }
+        _ => {
+            return Err(CliError::InvalidArg(
+                "pass exactly one of --child/--parent/--blocks/--blocked-by".into(),
+            ));
+        }
+    };
+    if json {
+        return output::print_json(&serde_json::json!({ "linked": true }));
+    }
+    println!("{described}");
+    Ok(())
+}
+
+async fn run_unlink(
+    client: &KaitenClient,
+    json: bool,
+    card: &str,
+    flags: LinkFlags,
+) -> Result<(), CliError> {
+    let card_id = parse_card_ref(card)?;
+    let (child, parent, blocks, blocked_by) = flags;
+    match (child, parent, blocks, blocked_by) {
+        (Some(target), None, None, None) => {
+            client.links().remove_child(card_id, target).await?;
+        }
+        (None, Some(target), None, None) => {
+            client.links().remove_child(target, card_id).await?;
+        }
+        (None, None, Some(target), None) | (None, None, None, Some(target)) => {
+            // the blocker entry lives on the BLOCKED card
+            let (blocked_id, blocker_card_id) = if blocks.is_some() {
+                (target, card_id)
+            } else {
+                (card_id, target)
+            };
+            let blocked_card = client.cards().get(blocked_id).await?;
+            let Some(blocker) = blocked_card
+                .blockers
+                .iter()
+                .find(|b| b.blocker_card_id == Some(blocker_card_id))
+            else {
+                return Err(CliError::InvalidArg(format!(
+                    "card {blocked_id} has no blocker with card {blocker_card_id}"
+                )));
+            };
+            client
+                .links()
+                .remove_blocker(blocked_id, blocker.id)
+                .await?;
+        }
+        _ => {
+            return Err(CliError::InvalidArg(
+                "pass exactly one of --child/--parent/--blocks/--blocked-by".into(),
+            ));
+        }
+    }
+    if json {
+        return output::print_json(&serde_json::json!({ "unlinked": true }));
+    }
+    println!("unlinked");
+    Ok(())
+}
+
+async fn run_unblock(client: &KaitenClient, json: bool, card: &str) -> Result<(), CliError> {
+    let card_id = parse_card_ref(card)?;
+    let req = UpdateCard {
+        blocked: Some(false),
+        ..Default::default()
+    };
+    let card = client.cards().update(card_id, &req).await?;
+    if json {
+        return output::print_json(&card);
+    }
+    println!("released all blocks on card {}", card.id);
+    Ok(())
+}
+
+async fn run_file(client: &KaitenClient, json: bool, cmd: CardFileCmd) -> Result<(), CliError> {
+    match cmd {
+        CardFileCmd::Add { card, path } => {
+            let card_id = parse_card_ref(&card)?;
+            let file = client.files().attach(card_id, &path).await?;
+            if json {
+                return output::print_json(&file);
+            }
+            println!(
+                "attached {} ({} bytes) to card {card_id}\nurl (public!): {}",
+                file.name,
+                file.size.unwrap_or(0),
+                file.url.as_deref().unwrap_or("-")
+            );
+            Ok(())
+        }
+        CardFileCmd::Rm { card, file_id } => {
+            let card_id = parse_card_ref(&card)?;
+            client.files().detach(card_id, file_id).await?;
+            if json {
+                return output::print_json(&serde_json::json!({ "detached": true }));
+            }
+            println!("detached file {file_id} from card {card_id}");
+            Ok(())
+        }
+    }
+}
+
+async fn run_delete(
+    client: &KaitenClient,
+    json: bool,
+    card: &str,
+    yes: bool,
+) -> Result<(), CliError> {
+    let card_id = parse_card_ref(card)?;
+    let target = client.cards().get(card_id).await?;
+    if !yes {
+        eprint!(
+            "PERMANENTLY delete card {card_id} \"{}\"? Type the card id to confirm: ",
+            target.title
+        );
+        let mut answer = String::new();
+        std::io::stdin()
+            .read_line(&mut answer)
+            .map_err(CliError::Io)?;
+        if answer.trim() != card_id.to_string() {
+            return Err(CliError::InvalidArg(
+                "confirmation did not match the card id; nothing deleted".into(),
+            ));
+        }
+    }
+    client.cards().delete(card_id).await?;
+    if json {
+        return output::print_json(&serde_json::json!({ "deleted": true, "card_id": card_id }));
+    }
+    println!("deleted card {card_id}");
+    Ok(())
+}
+
+async fn run_time(client: &KaitenClient, json: bool, cmd: CardTimeCmd) -> Result<(), CliError> {
+    match cmd {
+        CardTimeCmd::Add {
+            card,
+            minutes,
+            date,
+            comment,
+            role,
+        } => {
+            let card_id = parse_card_ref(&card)?;
+            let role_id = if let Some(id) = role {
+                id
+            } else {
+                let roles = client.users().roles().await?;
+                roles
+                    .first()
+                    .ok_or_else(|| {
+                        CliError::InvalidArg(
+                            "no user roles in the company; pass --role explicitly".into(),
+                        )
+                    })?
+                    .id
+            };
+            let log = client
+                .time_logs()
+                .add(card_id, minutes, &date, role_id, comment.as_deref())
+                .await?;
+            if json {
+                return output::print_json(&log);
+            }
+            println!("logged {} min on card {card_id} ({})", log.time_spent, date);
+            Ok(())
+        }
+        CardTimeCmd::List { card } => {
+            let card_id = parse_card_ref(&card)?;
+            let logs = client.time_logs().list(card_id).await?;
+            if json {
+                return output::print_json(&logs);
+            }
+            let mut table = output::table(&["ID", "MINUTES", "DATE", "COMMENT"]);
+            for log in &logs {
+                table.add_row(vec![
+                    log.id.to_string(),
+                    log.time_spent.to_string(),
+                    date_cell(log.for_date.as_deref()),
+                    log.comment.clone().unwrap_or_default(),
+                ]);
+            }
+            println!("{table}");
+            Ok(())
+        }
     }
 }
 

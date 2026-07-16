@@ -8,7 +8,8 @@
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct User {
     pub id: u64,
-    pub uid: String,
+    #[serde(default)]
+    pub uid: Option<String>,
     #[serde(default)]
     pub full_name: Option<String>,
     #[serde(default)]
@@ -22,7 +23,8 @@ pub struct User {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Space {
     pub id: u64,
-    pub uid: String,
+    #[serde(default)]
+    pub uid: Option<String>,
     pub title: String,
     #[serde(default)]
     pub archived: Option<bool>,
@@ -90,7 +92,9 @@ pub struct CardTag {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CardMember {
-    /// User id.
+    /// User id. ABSENT in PATCH /members/{id} responses (only `user_id`
+    /// is present there), hence the default.
+    #[serde(default)]
     pub id: u64,
     #[serde(default)]
     pub user_id: Option<u64>,
@@ -125,12 +129,62 @@ pub struct Checklist {
     pub sort_order: Option<f64>,
 }
 
+/// A blocker entry inside `card.blockers`.
+///
+/// The `blockers` key is ABSENT from the API response until the card has
+/// been blocked at least once, hence `#[serde(default)]` on `Card.blockers`.
+/// The blocking card is referenced by `blocker_card_id`/`blocker_card_title`
+/// (the `blocker` key in the raw JSON is the *user* who created the block).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct Blocker {
+    pub id: u64,
+    #[serde(default)]
+    pub reason: Option<String>,
+    #[serde(default)]
+    pub blocker_card_id: Option<u64>,
+    #[serde(default)]
+    pub blocker_card_title: Option<String>,
+    #[serde(default)]
+    pub blocker_id: Option<u64>,
+    #[serde(default)]
+    pub released: Option<bool>,
+    #[serde(default)]
+    pub created: Option<String>,
+}
+
+/// A file attached to a card. `url` is served WITHOUT authentication
+/// (an unguessable UUID link) — treat every attachment as public.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CardFile {
+    pub id: u64,
+    pub name: String,
+    #[serde(default)]
+    pub url: Option<String>,
+    #[serde(default)]
+    pub size: Option<u64>,
+    #[serde(rename = "type", default)]
+    pub file_type: Option<u8>,
+    #[serde(default)]
+    pub mime_type: Option<String>,
+    #[serde(default)]
+    pub external: Option<bool>,
+    #[serde(default)]
+    pub deleted: Option<bool>,
+    #[serde(default)]
+    pub author_id: Option<u64>,
+    #[serde(default)]
+    pub created: Option<String>,
+}
+
 /// GET /cards/{id} returns the full card; GET /cards returns cards
 /// without `description`/`members`/`checklists` — the same model parses both.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Card {
     pub id: u64,
     pub title: String,
+    /// Human-readable card key; `null` unless the feature is enabled in Kaiten.
+    #[serde(default)]
+    pub key: Option<String>,
     #[serde(default)]
     pub description: Option<String>,
     #[serde(default)]
@@ -161,6 +215,9 @@ pub struct Card {
     pub due_date: Option<String>,
     #[serde(default)]
     pub comments_total: Option<u32>,
+    /// Comments do NOT bump `updated` — this is the only signal they leave.
+    #[serde(default)]
+    pub comment_last_added_at: Option<String>,
     /// Nested board has no `columns`/`lanes` keys → they default to empty.
     #[serde(default)]
     pub board: Option<Board>,
@@ -178,9 +235,25 @@ pub struct Card {
     pub tags: Vec<CardTag>,
     #[serde(default)]
     pub checklists: Vec<Checklist>,
-    /// Custom properties, read-only.
+    /// Custom properties; `null` when the card has none.
     #[serde(default)]
     pub properties: Option<serde_json::Value>,
+    #[serde(default)]
+    pub children_count: Option<u32>,
+    #[serde(default)]
+    pub parents_count: Option<u32>,
+    #[serde(default)]
+    pub blocked: Option<bool>,
+    /// Linked cards: embedded in GET /cards/{id}, absent from list responses.
+    #[serde(default)]
+    pub children: Vec<Card>,
+    #[serde(default)]
+    pub parents: Vec<Card>,
+    /// Conditional key: absent until the card has been blocked at least once.
+    #[serde(default)]
+    pub blockers: Vec<Blocker>,
+    #[serde(default)]
+    pub files: Vec<CardFile>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -206,4 +279,58 @@ pub struct Tag {
     pub name: String,
     #[serde(default)]
     pub color: Option<i64>,
+}
+
+/// A time log entry (GET/POST /cards/{id}/time-logs).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct TimeLog {
+    pub id: u64,
+    /// Minutes.
+    pub time_spent: i64,
+    #[serde(default)]
+    pub for_date: Option<String>,
+    #[serde(default)]
+    pub comment: Option<String>,
+    /// User role id; built-in roles have NEGATIVE ids (e.g. -1 = Employee).
+    #[serde(default)]
+    pub role_id: Option<i64>,
+    #[serde(default)]
+    pub author_id: Option<u64>,
+    #[serde(default)]
+    pub created: Option<String>,
+}
+
+/// Company user role (GET /user-roles). Built-in roles have negative ids.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct UserRole {
+    pub id: i64,
+    pub name: String,
+}
+
+/// Company-level custom property (GET /company/custom-properties).
+///
+/// Values are written through card create/update `properties`, keyed as
+/// `id_{property_id}`; select values are referenced by id (see
+/// [`SelectValue`]) and passed as an ARRAY even for single select.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CustomProperty {
+    pub id: u64,
+    pub name: String,
+    /// "select", "multi_select", "string", "number", "date", ...
+    #[serde(rename = "type")]
+    pub property_type: String,
+    #[serde(default)]
+    pub archived: Option<bool>,
+}
+
+/// One option of a select-type custom property
+/// (GET /company/custom-properties/{id}/select-values).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SelectValue {
+    pub id: u64,
+    pub value: String,
+    #[serde(default)]
+    pub color: Option<i64>,
+    #[serde(default)]
+    pub sort_order: Option<f64>,
 }

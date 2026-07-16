@@ -40,6 +40,9 @@ pub enum Commands {
     /// Work with card types
     #[command(name = "card-type", subcommand)]
     CardType(CardTypeCmd),
+    /// Company custom properties (reference for --properties-json)
+    #[command(subcommand)]
+    Property(PropertyCmd),
     /// Raw API request (like `gh api`)
     Api {
         /// HTTP method: GET|POST|PATCH|PUT|DELETE
@@ -76,6 +79,14 @@ pub enum AuthCmd {
 }
 
 #[derive(Subcommand)]
+pub enum PropertyCmd {
+    /// List company custom properties
+    List,
+    /// List select values of a property
+    Values { property_id: u64 },
+}
+
+#[derive(Subcommand)]
 pub enum SpaceCmd {
     /// List spaces
     List,
@@ -91,6 +102,24 @@ pub enum BoardCmd {
     },
     /// Show board columns and lanes
     View { board_id: u64 },
+}
+
+/// Card state for `card list --state` (API values 1/2/3).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
+pub enum CardState {
+    Queued,
+    InProgress,
+    Done,
+}
+
+impl CardState {
+    pub fn as_u8(self) -> u8 {
+        match self {
+            Self::Queued => 1,
+            Self::InProgress => 2,
+            Self::Done => 3,
+        }
+    }
 }
 
 #[derive(Subcommand)]
@@ -124,9 +153,27 @@ pub enum CardCmd {
         /// Include only archived cards
         #[arg(long)]
         archived: bool,
-        /// Max number of cards
+        /// Filter by state (repeatable)
+        #[arg(long = "state", value_enum)]
+        states: Vec<CardState>,
+        /// Only cards updated at/after this ISO 8601 time (inclusive)
+        #[arg(long)]
+        updated_after: Option<String>,
+        /// Only cards created at/after this ISO 8601 time (inclusive)
+        #[arg(long)]
+        created_after: Option<String>,
+        /// Sort by a card field, e.g. "updated" or "created"
+        #[arg(long)]
+        sort: Option<String>,
+        /// Sort descending (with --sort)
+        #[arg(long, requires = "sort")]
+        desc: bool,
+        /// Max number of cards (the server caps this at 100)
         #[arg(long, default_value_t = 50)]
         limit: u32,
+        /// Number of cards to skip (pagination; use with --limit)
+        #[arg(long)]
+        offset: Option<u32>,
     },
     /// Show one card (accepts id or browser URL)
     View {
@@ -153,6 +200,10 @@ pub enum CardCmd {
         /// Mark card as ASAP
         #[arg(long)]
         asap: bool,
+        /// Custom property values as JSON, keyed as id_{property_id}
+        /// (see `kaiten property list`), e.g. '{"id_612634": [18929916]}'
+        #[arg(long = "properties-json")]
+        properties_json: Option<String>,
     },
     /// Edit card fields
     Edit {
@@ -166,6 +217,10 @@ pub enum CardCmd {
         /// true|false
         #[arg(long)]
         asap: Option<bool>,
+        /// Custom property values as JSON, keyed as id_{property_id}
+        /// (see `kaiten property list`), e.g. '{"id_612634": [18929916]}'
+        #[arg(long = "properties-json")]
+        properties_json: Option<String>,
     },
     /// Move card to another column/lane/board
     Move {
@@ -179,6 +234,49 @@ pub enum CardCmd {
     },
     /// Archive card
     Archive { card: String },
+    /// Link the card to another card (hierarchy or blocking)
+    Link {
+        card: String,
+        /// Make <CHILD> a child of the card
+        #[arg(long, group = "link_kind")]
+        child: Option<u64>,
+        /// Make <PARENT> a parent of the card
+        #[arg(long, group = "link_kind")]
+        parent: Option<u64>,
+        /// The card blocks <BLOCKS>
+        #[arg(long, group = "link_kind")]
+        blocks: Option<u64>,
+        /// The card is blocked by <BLOCKED_BY>
+        #[arg(long = "blocked-by", group = "link_kind")]
+        blocked_by: Option<u64>,
+        /// Block reason (with --blocks/--blocked-by)
+        #[arg(long, requires = "link_kind")]
+        reason: Option<String>,
+    },
+    /// Remove a card link (same flags as `card link`)
+    Unlink {
+        card: String,
+        #[arg(long, group = "link_kind")]
+        child: Option<u64>,
+        #[arg(long, group = "link_kind")]
+        parent: Option<u64>,
+        #[arg(long, group = "link_kind")]
+        blocks: Option<u64>,
+        #[arg(long = "blocked-by", group = "link_kind")]
+        blocked_by: Option<u64>,
+    },
+    /// Release ALL blocks on the card
+    Unblock { card: String },
+    /// Delete card PERMANENTLY (unlike archive; asks for confirmation)
+    Delete {
+        card: String,
+        /// Skip the confirmation prompt
+        #[arg(long)]
+        yes: bool,
+    },
+    /// Card time logs
+    #[command(subcommand)]
+    Time(CardTimeCmd),
     /// Card members
     #[command(subcommand)]
     Member(CardMemberCmd),
@@ -191,6 +289,42 @@ pub enum CardCmd {
     /// Card tags
     #[command(subcommand)]
     Tag(CardTagCmd),
+    /// Card file attachments
+    #[command(subcommand)]
+    File(CardFileCmd),
+}
+
+#[derive(Subcommand)]
+pub enum CardTimeCmd {
+    /// Log time spent on the card
+    Add {
+        card: String,
+        /// Minutes spent
+        #[arg(long)]
+        minutes: i64,
+        /// Date of the work, YYYY-MM-DD
+        #[arg(long)]
+        date: String,
+        #[arg(long)]
+        comment: Option<String>,
+        /// User role id (default: the company's first role)
+        #[arg(long)]
+        role: Option<i64>,
+    },
+    /// List time logs of the card
+    List { card: String },
+}
+
+#[derive(Subcommand)]
+pub enum CardFileCmd {
+    /// Attach a local file (served from a PUBLIC unguessable URL!)
+    Add {
+        card: String,
+        /// Path of the file to upload
+        path: std::path::PathBuf,
+    },
+    /// Detach a file by id (see `card view`)
+    Rm { card: String, file_id: u64 },
 }
 
 #[derive(Subcommand)]
@@ -199,6 +333,15 @@ pub enum CardMemberCmd {
     Add { card: String, user: String },
     /// Remove member (user id or email)
     Remove { card: String, user: String },
+    /// Make a member the responsible person
+    Responsible {
+        card: String,
+        /// User id or email (must already be a member)
+        user: String,
+        /// Demote back to a regular member
+        #[arg(long)]
+        unset: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -211,6 +354,15 @@ pub enum CardCommentCmd {
     },
     /// List comments
     List { card: String },
+    /// Edit a comment
+    Edit {
+        card: String,
+        comment_id: u64,
+        #[arg(long)]
+        body: String,
+    },
+    /// Delete a comment
+    Rm { card: String, comment_id: u64 },
 }
 
 #[derive(Subcommand)]

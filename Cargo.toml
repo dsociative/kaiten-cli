@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/kaiten-client", "crates/kaiten"]
 
 [workspace.package]
-version = "0.1.1"
+version = "0.2.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/dsociative/kaiten-cli"
@@ -27,7 +27,7 @@ doc_markdown = "allow"
 
 [workspace.dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "multipart", "rustls-tls"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_path_to_error = "0.1"
@@ -38,7 +38,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 clap = { version = "4", features = ["derive", "env"] }
 clap_complete = "4"
 comfy-table = "7"
-toml = "0.8"
+toml = "1.1"
 dirs = "6"
 rpassword = "7"
 rmcp = { version = "2", features = ["server", "macros", "transport-io"] }
