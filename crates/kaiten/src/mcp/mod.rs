@@ -57,12 +57,14 @@ fn json_result<T: serde::Serialize>(value: &T) -> Result<CallToolResult, McpErro
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct ListBoardsParams {
     /// Space id to list boards from (see list_spaces)
     pub space_id: u64,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct GetBoardParams {
     /// Board id
     pub board_id: u64,
@@ -88,6 +90,7 @@ impl CardStateParam {
 }
 
 #[derive(Debug, Default, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct ListCardsParams {
     /// Filter by space id
     pub space_id: Option<u64>,
@@ -128,24 +131,28 @@ pub struct ListCardsParams {
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct GetCardParams {
     /// Card id
     pub card_id: u64,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct ListCommentsParams {
     /// Card id
     pub card_id: u64,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct ListChecklistsParams {
     /// Card id
     pub card_id: u64,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct CreateCardParams {
     /// Board id to create the card on
     pub board_id: u64,
@@ -170,6 +177,7 @@ pub struct CreateCardParams {
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct UpdateCardParams {
     /// Card id
     pub card_id: u64,
@@ -190,6 +198,7 @@ pub struct UpdateCardParams {
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct ListPropertySelectValuesParams {
     /// Custom property id (see list_custom_properties)
     pub property_id: u64,
@@ -200,6 +209,7 @@ pub struct ListPropertySelectValuesParams {
 // lint's fix would rename a documented external interface, not just style.
 #[allow(clippy::struct_field_names)]
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct MoveCardParams {
     /// Card id
     pub card_id: u64,
@@ -212,6 +222,7 @@ pub struct MoveCardParams {
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct CardMemberParams {
     /// Card id
     pub card_id: u64,
@@ -220,6 +231,7 @@ pub struct CardMemberParams {
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct AddCommentParams {
     /// Card id
     pub card_id: u64,
@@ -228,6 +240,7 @@ pub struct AddCommentParams {
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct AddChecklistItemParams {
     /// Card id
     pub card_id: u64,
@@ -238,6 +251,7 @@ pub struct AddChecklistItemParams {
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct SetChecklistItemCheckedParams {
     /// Card id
     pub card_id: u64,
@@ -250,6 +264,7 @@ pub struct SetChecklistItemCheckedParams {
 }
 
 #[derive(Debug, Default, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct PollUpdatesParams {
     /// Cursor: pass next_since from the previous poll_updates response verbatim.
     /// ISO 8601; the bound is INCLUSIVE, so a card updated exactly at `since`
@@ -319,6 +334,7 @@ pub enum LinkKind {
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct LinkCardsParams {
     /// Card id the link is described from
     pub card_id: u64,
@@ -333,6 +349,7 @@ pub struct LinkCardsParams {
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct UnlinkCardsParams {
     /// Card id the link is described from
     pub card_id: u64,
@@ -343,12 +360,14 @@ pub struct UnlinkCardsParams {
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct ReleaseBlocksParams {
     /// Card id
     pub card_id: u64,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct UpdateCommentParams {
     /// Card id
     pub card_id: u64,
@@ -359,6 +378,7 @@ pub struct UpdateCommentParams {
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct RemoveCommentParams {
     /// Card id
     pub card_id: u64,
@@ -367,6 +387,7 @@ pub struct RemoveCommentParams {
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct SetCardResponsibleParams {
     /// Card id
     pub card_id: u64,
@@ -377,6 +398,7 @@ pub struct SetCardResponsibleParams {
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct AddTimeLogParams {
     /// Card id
     pub card_id: u64,
@@ -392,12 +414,14 @@ pub struct AddTimeLogParams {
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct ListTimeLogsParams {
     /// Card id
     pub card_id: u64,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct AttachFileParams {
     /// Card id
     pub card_id: u64,
@@ -406,6 +430,7 @@ pub struct AttachFileParams {
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct DetachFileParams {
     /// Card id
     pub card_id: u64,
@@ -414,6 +439,7 @@ pub struct DetachFileParams {
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct ArchiveCardParams {
     /// Card id
     pub card_id: u64,
@@ -422,12 +448,14 @@ pub struct ArchiveCardParams {
 }
 
 #[derive(Debug, Default, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct ListUsersParams {
     /// Case-insensitive substring matched against username, full name and email
     pub query: Option<String>,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct CardTagParams {
     /// Card id
     pub card_id: u64,
@@ -436,6 +464,7 @@ pub struct CardTagParams {
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct AddChecklistParams {
     /// Card id
     pub card_id: u64,
@@ -585,7 +614,7 @@ impl KaitenMcp {
     }
 
     #[tool(
-        description = "Update card title, description, type or ASAP flag. Only provided fields are changed."
+        description = "Update card title, description, type, ASAP flag or custom properties. Only provided fields are changed. To archive/restore use archive_card; to move use move_card."
     )]
     async fn update_card(
         &self,
@@ -1834,6 +1863,31 @@ mod tests {
             .unwrap();
         let value: serde_json::Value = serde_json::from_str(&tool_text(&result)).unwrap();
         assert_eq!(value["responsible"], true);
+    }
+
+    /// The exact trap a live agent hit on v0.1: unknown params (e.g.
+    /// `archived`/`condition` sent to update_card) were silently dropped and
+    /// the tool reported success. deny_unknown_fields turns that into a
+    /// validation error instead of a silent no-op.
+    #[test]
+    fn unknown_params_are_rejected_not_silently_dropped() {
+        let err = serde_json::from_value::<super::UpdateCardParams>(serde_json::json!({
+            "card_id": 1, "archived": true
+        }))
+        .unwrap_err();
+        assert!(err.to_string().contains("archived"), "{err}");
+
+        let err = serde_json::from_value::<super::UpdateCardParams>(serde_json::json!({
+            "card_id": 1, "condition": 2
+        }))
+        .unwrap_err();
+        assert!(err.to_string().contains("condition"), "{err}");
+
+        let err = serde_json::from_value::<super::PollUpdatesParams>(serde_json::json!({
+            "since": "2026-07-17T00:00:00Z", "updated_after": "typo"
+        }))
+        .unwrap_err();
+        assert!(err.to_string().contains("updated_after"), "{err}");
     }
 
     #[test]
