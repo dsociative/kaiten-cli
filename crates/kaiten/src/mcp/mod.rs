@@ -1139,6 +1139,10 @@ impl KaitenMcp {
     }
 }
 
+// clippy 1.98+ `unused_async_trait_impl` fires on the `async fn list_tools` that
+// `#[tool_handler]` generates (its body has no `.await`). That is rmcp macro output,
+// not something this crate can change, so the lint is allowed at this one site.
+#[allow(clippy::unused_async_trait_impl)]
 // rmcp 2.2.0's `#[tool_handler]` default router expression is `Self::tool_router()`,
 // which would rebuild a fresh router per request and leave the `tool_router` instance
 // field dead; route through the field explicitly so it's the single source of truth.
