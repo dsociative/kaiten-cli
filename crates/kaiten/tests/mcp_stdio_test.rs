@@ -293,6 +293,9 @@ fn mcp_stdio_echoes_known_legacy_protocol_versions() {
 /// Pins the `tools/call` contract for legacy clients through the real router:
 /// invalid params and API failures are tool-level errors (`isError`), unknown
 /// tools are JSON-RPC errors, successes carry JSON text — and nothing new leaks.
+// `multi_thread` only for consistency with the other wiremock tests: the child is
+// driven with blocking reads, which is fine on any flavor because wiremock serves
+// from its own thread, not from this runtime.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn mcp_stdio_tools_call_legacy_wire_contract() {
     let server = MockServer::start().await;
