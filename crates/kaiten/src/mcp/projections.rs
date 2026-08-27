@@ -292,9 +292,9 @@ impl From<&Card> for CardDetail {
 /// Response of card mutations (`create_card`, `update_card`, `move_card`,
 /// `archive_card`, `release_blocks`): enough to confirm the result and hand
 /// the user a link — details on demand via `get_card`. `properties` echoes
-/// the card's custom property values as
-/// the server now holds them (issue #15: without it a dropped write and
-/// "this tool never returns properties" were indistinguishable).
+/// the card's custom property values as the server now holds them (issue
+/// #15: without it a dropped write and "this tool never returns properties"
+/// were indistinguishable).
 #[derive(Debug, serde::Serialize)]
 pub struct MutationResult {
     pub id: u64,
