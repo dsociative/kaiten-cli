@@ -3,6 +3,7 @@
 [![CI](https://github.com/dsociative/kaiten-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/dsociative/kaiten-cli/actions/workflows/ci.yml)
 [![Security](https://github.com/dsociative/kaiten-cli/actions/workflows/security.yml/badge.svg)](https://github.com/dsociative/kaiten-cli/actions/workflows/security.yml)
 [![CodeQL](https://github.com/dsociative/kaiten-cli/actions/workflows/codeql.yml/badge.svg)](https://github.com/dsociative/kaiten-cli/actions/workflows/codeql.yml)
+[![Coverage](https://codecov.io/gh/dsociative/kaiten-cli/graph/badge.svg)](https://codecov.io/gh/dsociative/kaiten-cli)
 [![Release](https://img.shields.io/github/v/release/dsociative/kaiten-cli)](https://github.com/dsociative/kaiten-cli/releases)
 [![Crates.io](https://img.shields.io/crates/v/kaiten-cli.svg)](https://crates.io/crates/kaiten-cli)
 [![Downloads](https://img.shields.io/crates/d/kaiten-cli.svg)](https://crates.io/crates/kaiten-cli)
