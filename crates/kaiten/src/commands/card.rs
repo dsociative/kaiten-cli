@@ -1,10 +1,13 @@
-use kaiten_client::{CardFilter, CreateCard, KaitenClient, UpdateCard};
+use std::path::Path;
+
+use kaiten_client::{CardFilter, CreateCard, FileRef, KaitenClient, UpdateCard};
 
 use crate::cli::{
     CardChecklistCmd, CardChecklistItemCmd, CardCmd, CardCommentCmd, CardFileCmd, CardMemberCmd,
     CardTagCmd, CardTimeCmd,
 };
 use crate::config::Defaults;
+use crate::download;
 use crate::error::CliError;
 use crate::output;
 use crate::properties;
@@ -877,7 +880,65 @@ async fn run_file(client: &KaitenClient, json: bool, cmd: CardFileCmd) -> Result
             println!("detached file {file_id} from card {card_id}");
             Ok(())
         }
+        CardFileCmd::List { card } => run_file_list(client, json, &card).await,
+        CardFileCmd::Get {
+            card,
+            file,
+            output,
+            force,
+        } => run_file_get(client, json, &card, &file, output.as_deref(), force).await,
     }
+}
+
+async fn run_file_list(client: &KaitenClient, json: bool, card: &str) -> Result<(), CliError> {
+    let card_id = parse_card_ref(card)?;
+    let files = client.files().list(card_id).await?;
+    if json {
+        return output::print_json(&files);
+    }
+    if files.is_empty() {
+        println!("no files on card {card_id}");
+        return Ok(());
+    }
+    let mut table = output::table(&["ID", "NAME", "SIZE", "MIME TYPE", "CREATED"]);
+    for f in &files {
+        table.add_row(vec![
+            FileRef::from(f).to_string(),
+            truncate_text(&f.name, 50),
+            f.size.map_or_else(|| "-".to_string(), |s| s.to_string()),
+            f.mime_type.clone().unwrap_or_else(|| "-".to_string()),
+            date_cell(f.created.as_deref()),
+        ]);
+    }
+    println!("{table}");
+    Ok(())
+}
+
+async fn run_file_get(
+    client: &KaitenClient,
+    json: bool,
+    card: &str,
+    file: &str,
+    to: Option<&Path>,
+    force: bool,
+) -> Result<(), CliError> {
+    let card_id = parse_card_ref(card)?;
+    let Ok(file_ref) = file.parse::<FileRef>();
+    let files = client.files().list(card_id).await?;
+    let file = download::find_file(card_id, &files, &file_ref)?;
+    let name = download::safe_file_name(file);
+    // "" as the default directory so the default target prints as a bare name
+    let target = download::target_path(to, Path::new(""), &name);
+    download::ensure_writable(&target, force, "--force")?;
+    let saved = download::save(client, file, &target).await?;
+    if json {
+        return output::print_json(&saved);
+    }
+    println!(
+        "saved {} ({} bytes) to {}",
+        saved.name, saved.size, saved.path
+    );
+    Ok(())
 }
 
 async fn run_delete(

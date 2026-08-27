@@ -329,6 +329,20 @@ pub enum CardFileCmd {
     },
     /// Detach a file by id (see `card view`)
     Rm { card: String, file_id: u64 },
+    /// List attachments (ID is the numeric id, or the uid for files that only have one)
+    List { card: String },
+    /// Download an attachment by id or uid (see `card file list`)
+    Get {
+        card: String,
+        /// File id or uid
+        file: String,
+        /// Target file, or an existing directory (default: the original name in the current directory)
+        #[arg(short = 'o', long = "output")]
+        output: Option<std::path::PathBuf>,
+        /// Overwrite the target if it exists
+        #[arg(long)]
+        force: bool,
+    },
 }
 
 #[derive(Subcommand)]
