@@ -6,7 +6,8 @@
 //! the CLI (`kaiten card view --json`, `kaiten api`).
 
 use kaiten_client::{
-    Blocker, Card, CardFile, CardMember, Checklist, ChecklistItem, Comment, TimeLog, User,
+    Blocker, Card, CardFile, CardMember, Checklist, ChecklistItem, Comment, ExternalLink, TimeLog,
+    User,
 };
 
 #[allow(clippy::trivially_copy_pass_by_ref)] // signature dictated by serde
@@ -276,6 +277,12 @@ pub struct CardDetail {
     pub blockers: Vec<BlockerView>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub files: Vec<FileView>,
+    /// Only with `get_card` `include: ["external_links"]` (a second request).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub external_links: Option<Vec<ExternalLinkView>>,
+    /// Only with `get_card` `include: ["comments"]` (a second request).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub comments: Option<Vec<CommentView>>,
 }
 
 impl From<&Card> for CardDetail {
@@ -297,6 +304,8 @@ impl From<&Card> for CardDetail {
             parents: card.parents.iter().map(LinkedCardView::from).collect(),
             blockers: card.blockers.iter().map(BlockerView::from).collect(),
             files: card.files.iter().map(FileView::from).collect(),
+            external_links: None,
+            comments: None,
         }
     }
 }
@@ -377,6 +386,32 @@ impl From<&Comment> for CommentView {
                 .and_then(|u| u.username.clone().or_else(|| u.full_name.clone())),
             created: c.created.clone(),
             edited: c.edited.unwrap_or(false),
+        }
+    }
+}
+
+/// An external link of a card, without the ids Kaiten repeats
+/// (`uid`, `card_id`, `external_link_id`, `external_link_uid`).
+#[derive(Debug, serde::Serialize)]
+pub struct ExternalLinkView {
+    pub id: u64,
+    pub url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub created: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub updated: Option<String>,
+}
+
+impl From<&ExternalLink> for ExternalLinkView {
+    fn from(link: &ExternalLink) -> Self {
+        Self {
+            id: link.id,
+            url: link.url.clone(),
+            description: link.description.clone(),
+            created: link.created.clone(),
+            updated: link.updated.clone(),
         }
     }
 }

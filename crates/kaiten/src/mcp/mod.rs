@@ -12,9 +12,10 @@ use rmcp::{ErrorData as McpError, ServerHandler, tool, tool_handler, tool_router
 use crate::download;
 use crate::error::CliError;
 use crate::properties;
+use crate::urls;
 use projections::{
     CardDetail, CardSummary, ChecklistItemView, ChecklistView, CommentResult, CommentView,
-    MemberView, MutationResult, TimeLogView, UserView,
+    ExternalLinkView, MemberView, MutationResult, TimeLogView, UserView,
 };
 
 #[derive(Clone)]
@@ -60,6 +61,12 @@ fn coerce_properties(
 
 /// `try_api!` for this crate's own argument validation: the `Err` is already
 /// a user-facing message, returned as a tool-level error before any API call.
+/// `url` of an external link must be an absolute http(s) URL; the value is
+/// never echoed (it may hold a secret).
+fn link_url(raw: &str) -> Result<String, String> {
+    urls::absolute_http_url(raw).map_err(|e| format!("url {e}"))
+}
+
 macro_rules! try_args {
     ($e:expr) => {
         match $e {
@@ -168,6 +175,20 @@ pub struct ListCardsParams {
 pub struct GetCardParams {
     /// Card id
     pub card_id: u64,
+    /// Extra sections to fetch with the card, one more request each:
+    /// "external_links" (Links (common links)), "comments". Omit for the
+    /// plain card.
+    #[serde(default)]
+    pub include: Option<Vec<IncludeSection>>,
+}
+
+/// Sections `get_card` can fetch in addition to the card. The names match
+/// the CLI `card view --include` values.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum IncludeSection {
+    ExternalLinks,
+    Comments,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
@@ -425,6 +446,46 @@ pub struct RemoveCommentParams {
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
+pub struct ListCardExternalLinksParams {
+    /// Card id
+    pub card_id: u64,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct AddCardExternalLinkParams {
+    /// Card id
+    pub card_id: u64,
+    /// Absolute http(s) URL
+    pub url: String,
+    /// Optional description shown next to the link
+    pub description: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct UpdateCardExternalLinkParams {
+    /// Card id
+    pub card_id: u64,
+    /// External link id (see list_card_external_links)
+    pub link_id: u64,
+    /// New absolute http(s) URL
+    pub url: Option<String>,
+    /// New description
+    pub description: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RemoveCardExternalLinkParams {
+    /// Card id
+    pub card_id: u64,
+    /// External link id (see list_card_external_links)
+    pub link_id: u64,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct SetCardResponsibleParams {
     /// Card id
     pub card_id: u64,
@@ -616,14 +677,24 @@ impl KaitenMcp {
     }
 
     #[tool(
-        description = "Get a full card by id: description, members, tags, checklists, custom properties, linked cards (children/parents), blockers and attached files. For the raw API JSON use the CLI (kaiten card view --json)."
+        description = "Get a full card by id: description, members, tags, checklists, custom properties, linked cards (children/parents), blockers and attached files. For the raw API JSON use the CLI (kaiten card view --json). Pass include: [\"external_links\", \"comments\"] to fetch those sections too (one extra request each)."
     )]
     async fn get_card(
         &self,
         Parameters(p): Parameters<GetCardParams>,
     ) -> Result<CallToolResult, McpError> {
         let card = try_api!(self.client.cards().get(p.card_id).await);
-        json_result(&CardDetail::from(&card))
+        let mut detail = CardDetail::from(&card);
+        let include = p.include.unwrap_or_default();
+        if include.contains(&IncludeSection::ExternalLinks) {
+            let links = try_api!(self.client.external_links().list(p.card_id).await);
+            detail.external_links = Some(links.iter().map(ExternalLinkView::from).collect());
+        }
+        if include.contains(&IncludeSection::Comments) {
+            let comments = try_api!(self.client.comments().list(p.card_id).await);
+            detail.comments = Some(comments.iter().map(CommentView::from).collect());
+        }
+        json_result(&detail)
     }
 
     #[tool(description = "List all comments of a card.")]
@@ -1072,6 +1143,77 @@ impl KaitenMcp {
         json_result(&serde_json::json!({ "removed": true, "comment_id": p.comment_id }))
     }
 
+    #[tool(description = "List the external links (Links (common links)) of a card.")]
+    async fn list_card_external_links(
+        &self,
+        Parameters(p): Parameters<ListCardExternalLinksParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let links = try_api!(self.client.external_links().list(p.card_id).await);
+        let views: Vec<ExternalLinkView> = links.iter().map(ExternalLinkView::from).collect();
+        json_result(&views)
+    }
+
+    #[tool(
+        description = "Add an external link to a card. `url` must be an absolute http(s) URL. Kaiten does not reject duplicates — check list_card_external_links first when that matters."
+    )]
+    async fn add_card_external_link(
+        &self,
+        Parameters(p): Parameters<AddCardExternalLinkParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let url = try_args!(link_url(&p.url));
+        let link = try_api!(
+            self.client
+                .external_links()
+                .add(p.card_id, &url, p.description.as_deref())
+                .await
+        );
+        json_result(&ExternalLinkView::from(&link))
+    }
+
+    #[tool(
+        description = "Change the url and/or description of an external link on a card (at least one of them)."
+    )]
+    async fn update_card_external_link(
+        &self,
+        Parameters(p): Parameters<UpdateCardExternalLinkParams>,
+    ) -> Result<CallToolResult, McpError> {
+        if p.url.is_none() && p.description.is_none() {
+            return Ok(CallToolResult::error(vec![ContentBlock::text(
+                "nothing to change: pass url and/or description",
+            )]));
+        }
+        let url = match p.url.as_deref() {
+            Some(raw) => Some(try_args!(link_url(raw))),
+            None => None,
+        };
+        let link = try_api!(
+            self.client
+                .external_links()
+                .update(
+                    p.card_id,
+                    p.link_id,
+                    url.as_deref(),
+                    p.description.as_deref()
+                )
+                .await
+        );
+        json_result(&ExternalLinkView::from(&link))
+    }
+
+    #[tool(description = "Remove an external link from a card.")]
+    async fn remove_card_external_link(
+        &self,
+        Parameters(p): Parameters<RemoveCardExternalLinkParams>,
+    ) -> Result<CallToolResult, McpError> {
+        try_api!(
+            self.client
+                .external_links()
+                .remove(p.card_id, p.link_id)
+                .await
+        );
+        json_result(&serde_json::json!({ "removed": true, "link_id": p.link_id }))
+    }
+
     #[tool(
         description = "Make a card member the responsible person (or demote with responsible=false). The user must already be a member."
     )]
@@ -1291,7 +1433,11 @@ mod tests {
     use wiremock::matchers::{body_json, header, method, path, query_param};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    use super::{CreateCardParams, GetCardParams, KaitenMcp, ListCardsParams};
+    use super::{
+        AddCardExternalLinkParams, CreateCardParams, GetCardParams, IncludeSection, KaitenMcp,
+        ListCardExternalLinksParams, ListCardsParams, RemoveCardExternalLinkParams,
+        UpdateCardExternalLinkParams,
+    };
 
     const SPACES_FIXTURE: &str = include_str!("../../tests/fixtures/mcp_spaces.json");
     const CARD_CREATE_FIXTURE: &str = include_str!("../../tests/fixtures/mcp_card_create.json");
@@ -1342,7 +1488,10 @@ mod tests {
 
         let mcp = mcp_for(&server);
         let result = mcp
-            .get_card(Parameters(GetCardParams { card_id: 999 }))
+            .get_card(Parameters(GetCardParams {
+                card_id: 999,
+                include: None,
+            }))
             .await
             .unwrap();
         assert_eq!(result.is_error, Some(true));
@@ -1367,7 +1516,10 @@ mod tests {
 
         let mcp = mcp_for(&server);
         let result = mcp
-            .get_card(Parameters(GetCardParams { card_id: 999 }))
+            .get_card(Parameters(GetCardParams {
+                card_id: 999,
+                include: None,
+            }))
             .await
             .unwrap();
         assert_eq!(result.is_error, Some(true));
@@ -1511,6 +1663,7 @@ mod tests {
         let result = mcp
             .get_card(Parameters(GetCardParams {
                 card_id: 67_089_469,
+                include: None,
             }))
             .await
             .unwrap();
@@ -1998,7 +2151,7 @@ mod tests {
     }
 
     #[test]
-    fn registers_exactly_36_tools_with_spec_names() {
+    fn registers_exactly_40_tools_with_spec_names() {
         let tools = KaitenMcp::tool_router().list_all();
         let mut names: Vec<String> = tools.iter().map(|t| t.name.to_string()).collect();
         names.sort();
@@ -2039,6 +2192,10 @@ mod tests {
             "add_time_log",
             "list_time_logs",
             "download_file",
+            "list_card_external_links",
+            "add_card_external_link",
+            "update_card_external_link",
+            "remove_card_external_link",
         ];
         expected.sort_unstable();
         assert_eq!(names, expected);
@@ -2417,5 +2574,269 @@ mod tests {
                 "{name} lost its description: {prop}"
             );
         }
+    }
+
+    // --- issue #21: external links ---------------------------------------
+
+    const EXTERNAL_LINKS_FIXTURE: &str =
+        include_str!("../../tests/fixtures/external_links_list.json");
+    const EXTERNAL_LINK_ADD_FIXTURE: &str =
+        include_str!("../../tests/fixtures/external_link_add.json");
+
+    async fn mount_external_links(server: &MockServer, expect: u64) {
+        Mock::given(method("GET"))
+            .and(path("/cards/67089469/external-links"))
+            .and(header("Authorization", "Bearer test-token"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_raw(EXTERNAL_LINKS_FIXTURE, "application/json"),
+            )
+            .expect(expect)
+            .mount(server)
+            .await;
+    }
+
+    #[tokio::test]
+    async fn list_card_external_links_returns_compact_views() {
+        let server = MockServer::start().await;
+        mount_external_links(&server, 1).await;
+        let mcp = mcp_for(&server);
+
+        let result = mcp
+            .list_card_external_links(Parameters(ListCardExternalLinksParams {
+                card_id: 67_089_469,
+            }))
+            .await
+            .unwrap();
+        assert_ne!(result.is_error, Some(true));
+        let links: serde_json::Value = serde_json::from_str(&tool_text(&result)).unwrap();
+        assert_eq!(links.as_array().unwrap().len(), 2);
+        assert_eq!(links[0]["id"], 21_177_131);
+        assert_eq!(links[0]["url"], "https://example.com/spike");
+        assert_eq!(links[0]["description"], "Source");
+        assert_eq!(links[0]["created"], "2026-08-27T13:24:19.088Z");
+        assert!(links[1].get("description").is_none(), "{links}");
+        for noisy in ["uid", "card_id", "external_link_id", "external_link_uid"] {
+            assert!(links[0].get(noisy).is_none(), "{noisy} leaked: {links}");
+        }
+    }
+
+    #[tokio::test]
+    async fn add_card_external_link_posts_and_returns_the_view() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/cards/67089469/external-links"))
+            .and(header("Authorization", "Bearer test-token"))
+            .and(wiremock::matchers::body_json(serde_json::json!({
+                "url": "https://example.com/spike",
+                "description": "Source"
+            })))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_raw(EXTERNAL_LINK_ADD_FIXTURE, "application/json"),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        let mcp = mcp_for(&server);
+
+        let result = mcp
+            .add_card_external_link(Parameters(AddCardExternalLinkParams {
+                card_id: 67_089_469,
+                url: "https://example.com/spike".into(),
+                description: Some("Source".into()),
+            }))
+            .await
+            .unwrap();
+        assert_ne!(result.is_error, Some(true), "{}", tool_text(&result));
+        let link: serde_json::Value = serde_json::from_str(&tool_text(&result)).unwrap();
+        assert_eq!(link["id"], 21_177_131);
+        assert_eq!(link["url"], "https://example.com/spike");
+    }
+
+    /// Kaiten stores any string as a url; the tool refuses garbage before
+    /// any request and never echoes the value (it may hold a secret).
+    #[tokio::test]
+    async fn add_card_external_link_rejects_a_bad_url_before_any_request() {
+        let server = MockServer::start().await;
+        let mcp = mcp_for(&server);
+
+        for bad in ["notaurl", "ftp://host/x", "https://user:s3cret@host/x", " "] {
+            let result = mcp
+                .add_card_external_link(Parameters(AddCardExternalLinkParams {
+                    card_id: 67_089_469,
+                    url: bad.into(),
+                    description: None,
+                }))
+                .await
+                .unwrap();
+            assert_eq!(result.is_error, Some(true), "{bad:?}");
+            let text = tool_text(&result);
+            assert!(text.starts_with("url "), "{text}");
+            assert!(!text.contains("s3cret"), "{text}");
+        }
+        assert!(server.received_requests().await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn update_card_external_link_patches_only_the_given_fields() {
+        let server = MockServer::start().await;
+        Mock::given(method("PATCH"))
+            .and(path("/cards/67089469/external-links/21177131"))
+            .and(wiremock::matchers::body_json(serde_json::json!({
+                "description": "patched"
+            })))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_raw(EXTERNAL_LINK_ADD_FIXTURE, "application/json"),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        let mcp = mcp_for(&server);
+
+        let result = mcp
+            .update_card_external_link(Parameters(UpdateCardExternalLinkParams {
+                card_id: 67_089_469,
+                link_id: 21_177_131,
+                url: None,
+                description: Some("patched".into()),
+            }))
+            .await
+            .unwrap();
+        assert_ne!(result.is_error, Some(true), "{}", tool_text(&result));
+        let link: serde_json::Value = serde_json::from_str(&tool_text(&result)).unwrap();
+        assert_eq!(link["id"], 21_177_131);
+    }
+
+    #[tokio::test]
+    async fn update_card_external_link_without_changes_is_a_tool_error() {
+        let server = MockServer::start().await;
+        let mcp = mcp_for(&server);
+
+        let result = mcp
+            .update_card_external_link(Parameters(UpdateCardExternalLinkParams {
+                card_id: 67_089_469,
+                link_id: 21_177_131,
+                url: None,
+                description: None,
+            }))
+            .await
+            .unwrap();
+        assert_eq!(result.is_error, Some(true));
+        let text = tool_text(&result);
+        assert!(
+            text.contains("url") && text.contains("description"),
+            "{text}"
+        );
+        assert!(server.received_requests().await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn remove_card_external_link_reports_the_link_id() {
+        let server = MockServer::start().await;
+        Mock::given(method("DELETE"))
+            .and(path("/cards/67089469/external-links/21177131"))
+            .and(header("Authorization", "Bearer test-token"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(r#"{"id": 21177131}"#))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let mcp = mcp_for(&server);
+
+        let result = mcp
+            .remove_card_external_link(Parameters(RemoveCardExternalLinkParams {
+                card_id: 67_089_469,
+                link_id: 21_177_131,
+            }))
+            .await
+            .unwrap();
+        assert_ne!(result.is_error, Some(true), "{}", tool_text(&result));
+        let value: serde_json::Value = serde_json::from_str(&tool_text(&result)).unwrap();
+        assert_eq!(
+            value,
+            serde_json::json!({ "removed": true, "link_id": 21_177_131 })
+        );
+    }
+
+    /// Without `include` get_card stays a single request and its shape is
+    /// untouched; `include` opts into extra requests and extra keys.
+    #[tokio::test]
+    async fn get_card_include_external_links_and_comments_makes_extra_requests() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/cards/67089469"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_raw(CARD_FULL_FIXTURE, "application/json"),
+            )
+            .expect(3)
+            .mount(&server)
+            .await;
+        mount_external_links(&server, 2).await;
+        Mock::given(method("GET"))
+            .and(path("/cards/67089469/comments"))
+            .respond_with(ResponseTemplate::new(200).set_body_raw(
+                r#"[{"id": 5, "text": "hi", "created": "2026-08-27T10:00:00.000Z"}]"#,
+                "application/json",
+            ))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let mcp = mcp_for(&server);
+
+        let plain = mcp
+            .get_card(Parameters(GetCardParams {
+                card_id: 67_089_469,
+                include: None,
+            }))
+            .await
+            .unwrap();
+        let plain: serde_json::Value = serde_json::from_str(&tool_text(&plain)).unwrap();
+        assert!(plain.get("external_links").is_none(), "{plain}");
+        assert!(plain.get("comments").is_none(), "{plain}");
+
+        let links_only = mcp
+            .get_card(Parameters(GetCardParams {
+                card_id: 67_089_469,
+                include: Some(vec![IncludeSection::ExternalLinks]),
+            }))
+            .await
+            .unwrap();
+        let links_only: serde_json::Value = serde_json::from_str(&tool_text(&links_only)).unwrap();
+        assert_eq!(
+            links_only["external_links"][0]["url"],
+            "https://example.com/spike"
+        );
+        assert!(links_only.get("comments").is_none(), "{links_only}");
+
+        let both = mcp
+            .get_card(Parameters(GetCardParams {
+                card_id: 67_089_469,
+                include: Some(vec![
+                    IncludeSection::ExternalLinks,
+                    IncludeSection::Comments,
+                ]),
+            }))
+            .await
+            .unwrap();
+        let both: serde_json::Value = serde_json::from_str(&tool_text(&both)).unwrap();
+        assert_eq!(both["external_links"].as_array().unwrap().len(), 2);
+        assert_eq!(both["comments"][0]["text"], "hi");
+        assert_eq!(both["id"], 67_089_469, "{both}");
+    }
+
+    #[test]
+    fn get_card_include_schema_lists_the_section_names() {
+        let tools = KaitenMcp::tool_router().list_all();
+        let get_card = tools.iter().find(|t| t.name == "get_card").unwrap();
+        let schema = serde_json::to_value(&get_card.input_schema).unwrap();
+        let text = schema.to_string();
+        assert!(text.contains("external_links"), "{schema}");
+        assert!(text.contains("\"comments\""), "{schema}");
+        assert!(
+            schema["required"]
+                .as_array()
+                .is_none_or(|r| !r.iter().any(|v| v == "include")),
+            "include must be optional: {schema}"
+        );
     }
 }

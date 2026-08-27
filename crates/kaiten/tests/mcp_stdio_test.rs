@@ -17,7 +17,7 @@ const USER_CURRENT: &str = include_str!("fixtures/mcp_user_current.json");
 
 const READ_TIMEOUT: Duration = Duration::from_secs(20);
 
-const EXPECTED_TOOLS: [&str; 36] = [
+const EXPECTED_TOOLS: [&str; 40] = [
     "current_user",
     "list_spaces",
     "list_boards",
@@ -54,6 +54,10 @@ const EXPECTED_TOOLS: [&str; 36] = [
     "add_time_log",
     "list_time_logs",
     "download_file",
+    "list_card_external_links",
+    "add_card_external_link",
+    "update_card_external_link",
+    "remove_card_external_link",
 ];
 
 struct McpProc {
@@ -533,4 +537,59 @@ async fn mcp_stdio_download_file_saves_locally() {
     assert_eq!(path, dir.path().join("probe-attach.txt"));
     assert_eq!(std::fs::read_to_string(path).unwrap(), "attachment body");
     assert_eq!(descriptor["size"], 15);
+}
+
+/// `get_card` with `include` keeps the legacy wire shape and adds the
+/// requested section; an unknown section is a parameter error before any
+/// request, listing the accepted names.
+#[tokio::test(flavor = "multi_thread")]
+async fn mcp_stdio_get_card_include_external_links_keeps_legacy_shape() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/cards/67089469"))
+        .and(header("Authorization", "Bearer test-token"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            include_str!("fixtures/mcp_card_full.json"),
+            "application/json",
+        ))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/cards/67089469/external-links"))
+        .and(header("Authorization", "Bearer test-token"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            include_str!("fixtures/external_links_list.json"),
+            "application/json",
+        ))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let mut mcp = McpProc::spawn_with_base_url(&server.uri());
+    mcp.initialize("2025-03-26");
+    let card = mcp.call_tool(
+        3,
+        "get_card",
+        &serde_json::json!({ "card_id": 67_089_469, "include": ["external_links"] }),
+    );
+    assert!(card.get("error").is_none(), "{card}");
+    assert_ne!(card["result"]["isError"], serde_json::json!(true), "{card}");
+    assert_legacy_shape(&card["result"], "tools/call (get_card include)");
+    let detail: serde_json::Value = serde_json::from_str(tool_text(&card)).unwrap();
+    assert_eq!(detail["id"], 67_089_469, "{detail}");
+    assert_eq!(detail["external_links"][0]["id"], 21_177_131, "{detail}");
+
+    let bad = mcp.call_tool(
+        4,
+        "get_card",
+        &serde_json::json!({ "card_id": 67_089_469, "include": ["attachments"] }),
+    );
+    assert!(bad.get("error").is_none(), "{bad}");
+    assert_eq!(bad["result"]["isError"], serde_json::json!(true), "{bad}");
+    let text = tool_text(&bad);
+    assert!(
+        text.contains("external_links") && text.contains("comments"),
+        "{text}"
+    );
 }
