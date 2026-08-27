@@ -5,7 +5,8 @@
 
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
-use std::sync::mpsc;
+use std::sync::mpsc::{self, RecvTimeoutError};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
@@ -58,6 +59,12 @@ struct McpProc {
     child: Child,
     stdin: ChildStdin,
     lines: mpsc::Receiver<String>,
+    /// Everything the child wrote to stderr so far; shown when a read fails.
+    stderr: Arc<Mutex<String>>,
+    /// Drains the child's stderr into `stderr`; joined once the child has exited.
+    stderr_drain: Option<thread::JoinHandle<()>>,
+    /// First failed stdin write, reported by the next `read_response`.
+    stdin_error: Option<std::io::Error>,
 }
 
 impl McpProc {
@@ -81,12 +88,22 @@ impl McpProc {
             .env_remove("RUST_LOG")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null())
+            .stderr(Stdio::piped())
             .spawn()
             .expect("failed to spawn `kaiten mcp serve`");
 
         let stdin = child.stdin.take().unwrap();
         let stdout = child.stdout.take().unwrap();
+        let child_stderr = child.stderr.take().unwrap();
+        let stderr = Arc::new(Mutex::new(String::new()));
+        let stderr_sink = Arc::clone(&stderr);
+        let stderr_drain = thread::spawn(move || {
+            for line in BufReader::new(child_stderr).lines().map_while(Result::ok) {
+                let mut buf = stderr_sink.lock().unwrap();
+                buf.push_str(&line);
+                buf.push('\n');
+            }
+        });
         let (tx, rx) = mpsc::channel();
         thread::spawn(move || {
             for line in BufReader::new(stdout).lines() {
@@ -105,14 +122,34 @@ impl McpProc {
             child,
             stdin,
             lines: rx,
+            stderr,
+            stderr_drain: Some(stderr_drain),
+            stdin_error: None,
         }
     }
 
     fn send(&mut self, msg: &serde_json::Value) {
         let mut line = msg.to_string();
         line.push('\n');
-        self.stdin.write_all(line.as_bytes()).unwrap();
-        self.stdin.flush().unwrap();
+        // A dead child closes the pipe. Don't die here with a bare "Broken pipe":
+        // the next `read_response` reports the exit status and the child's stderr.
+        if let Err(err) = self
+            .stdin
+            .write_all(line.as_bytes())
+            .and_then(|()| self.stdin.flush())
+        {
+            self.stdin_error.get_or_insert(err);
+        }
+    }
+
+    /// Snapshot of the child's stderr plus any earlier stdin failure, for panics.
+    /// Copies out of the mutex first: a guard alive during `panic!` would poison it.
+    fn diagnostics(&self) -> String {
+        let stderr = self.stderr.lock().unwrap().clone();
+        match &self.stdin_error {
+            Some(err) => format!("stdin write failed earlier: {err}\nchild stderr:\n{stderr}"),
+            None => format!("child stderr:\n{stderr}"),
+        }
     }
 
     /// `initialize` (id 1) followed by `notifications/initialized`;
@@ -152,12 +189,29 @@ impl McpProc {
     }
 
     /// Reads stdout lines until a JSON-RPC response with the given id arrives.
-    fn read_response(&self, id: u64) -> serde_json::Value {
+    /// Panics with the child's stderr if it dies or stays silent for `READ_TIMEOUT`.
+    fn read_response(&mut self, id: u64) -> serde_json::Value {
         loop {
-            let line = self
-                .lines
-                .recv_timeout(READ_TIMEOUT)
-                .expect("timed out waiting for MCP response on stdout");
+            let line = match self.lines.recv_timeout(READ_TIMEOUT) {
+                Ok(line) => line,
+                Err(RecvTimeoutError::Timeout) => {
+                    let diagnostics = self.diagnostics();
+                    panic!("no response to id={id} within {READ_TIMEOUT:?}; {diagnostics}");
+                }
+                Err(RecvTimeoutError::Disconnected) => {
+                    // stdout closed: the child is gone (or going); collect why. `kill`
+                    // is a no-op once the child has exited (its status is kept) and
+                    // guarantees `wait` returns if stdout broke while it was alive.
+                    let _ = self.child.kill();
+                    let status = self.child.wait().expect("wait on child");
+                    // Exit closes stderr too, so joining the drain yields every line.
+                    if let Some(drain) = self.stderr_drain.take() {
+                        let _ = drain.join();
+                    }
+                    let diagnostics = self.diagnostics();
+                    panic!("child exited ({status}) before answering id={id}; {diagnostics}");
+                }
+            };
             let value: serde_json::Value = match serde_json::from_str(&line) {
                 Ok(v) => v,
                 Err(_) => continue, // ignore non-JSON noise
@@ -384,4 +438,31 @@ async fn mcp_stdio_tools_call_legacy_wire_contract() {
     );
     assert!(tool_text(&missing).contains("404"), "{missing}");
     assert_eq!(server.received_requests().await.unwrap().len(), 2);
+}
+
+/// Harness diagnostics: when the child dies (here: at startup, on an invalid
+/// base url), the failure must say so and carry the child's stderr instead of
+/// a bare "timed out" / "Broken pipe".
+#[test]
+fn mcp_stdio_harness_reports_child_stderr_when_the_child_dies() {
+    let mut mcp = McpProc::spawn_with_base_url("not a url");
+    // The caught panic is still printed by the default hook under `--nocapture`;
+    // that is expected. (Swapping the hook is process-global, hence racy here.)
+    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        mcp.initialize("2025-03-26");
+    }));
+    let payload = outcome.expect_err("initialize against a dead child must panic");
+    let message = payload
+        .downcast_ref::<String>()
+        .cloned()
+        .or_else(|| payload.downcast_ref::<&str>().map(ToString::to_string))
+        .unwrap_or_default();
+    assert!(
+        message.contains("invalid base url") && message.contains("not a url"),
+        "panic must carry the child's stderr, got: {message:?}"
+    );
+    assert!(
+        message.contains("exited"),
+        "panic must say the child exited, got: {message:?}"
+    );
 }
