@@ -182,9 +182,13 @@ pub enum CardCmd {
     /// Show one card (accepts id or browser URL)
     View {
         card: String,
-        /// Also fetch and print comments
+        /// Deprecated: use `--include comments`
         #[arg(long)]
         comments: bool,
+        /// Extra sections to fetch with the card: external_links, comments
+        /// (comma-separated or repeated)
+        #[arg(long, value_delimiter = ',', value_enum)]
+        include: Vec<ViewSection>,
     },
     /// Create a card
     Create {
@@ -287,6 +291,9 @@ pub enum CardCmd {
     /// Card comments
     #[command(subcommand)]
     Comment(CardCommentCmd),
+    /// Card external links (`Links (common links)` in Kaiten)
+    #[command(subcommand)]
+    ExternalLink(CardExternalLinkCmd),
     /// Card checklists
     #[command(subcommand)]
     Checklist(CardChecklistCmd),
@@ -381,6 +388,44 @@ pub enum CardCommentCmd {
     },
     /// Delete a comment
     Rm { card: String, comment_id: u64 },
+}
+
+#[derive(Subcommand)]
+pub enum CardExternalLinkCmd {
+    /// List external links
+    List { card: String },
+    /// Add an external link
+    Add {
+        card: String,
+        /// Absolute http(s) URL
+        #[arg(long)]
+        url: String,
+        #[arg(long)]
+        description: Option<String>,
+    },
+    /// Edit an external link (at least one of --url / --description)
+    Edit {
+        card: String,
+        link_id: u64,
+        /// New absolute http(s) URL
+        #[arg(long)]
+        url: Option<String>,
+        #[arg(long)]
+        description: Option<String>,
+    },
+    /// Remove an external link
+    Rm { card: String, link_id: u64 },
+}
+
+/// Sections `card view --include` fetches in addition to the card. The
+/// names match the MCP `get_card` `include` values.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+pub enum ViewSection {
+    /// External links (`Links (common links)`)
+    #[value(name = "external_links")]
+    ExternalLinks,
+    /// Comments
+    Comments,
 }
 
 #[derive(Subcommand)]

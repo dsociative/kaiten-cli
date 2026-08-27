@@ -3,14 +3,15 @@ use std::path::Path;
 use kaiten_client::{CardFilter, CreateCard, FileRef, KaitenClient, UpdateCard};
 
 use crate::cli::{
-    CardChecklistCmd, CardChecklistItemCmd, CardCmd, CardCommentCmd, CardFileCmd, CardMemberCmd,
-    CardTagCmd, CardTimeCmd,
+    CardChecklistCmd, CardChecklistItemCmd, CardCmd, CardCommentCmd, CardExternalLinkCmd,
+    CardFileCmd, CardMemberCmd, CardTagCmd, CardTimeCmd, ViewSection,
 };
 use crate::config::Defaults;
 use crate::download;
 use crate::error::CliError;
 use crate::output;
 use crate::properties;
+use crate::urls;
 
 /// Accepts a numeric card id or a browser URL containing `card/<id>`.
 pub fn parse_card_ref(s: &str) -> Result<u64, CliError> {
@@ -214,7 +215,11 @@ pub async fn run(
             )
             .await
         }
-        CardCmd::View { card, comments } => run_view(client, json, &card, comments).await,
+        CardCmd::View {
+            card,
+            comments,
+            include,
+        } => run_view(client, json, &card, comments, &include).await,
         CardCmd::Create {
             title,
             board,
@@ -300,6 +305,7 @@ pub async fn run(
         CardCmd::Time(cmd) => run_time(client, json, cmd).await,
         CardCmd::Member(cmd) => run_member(client, json, cmd).await,
         CardCmd::Comment(cmd) => run_comment(client, json, cmd).await,
+        CardCmd::ExternalLink(cmd) => run_external_link(client, json, cmd).await,
         CardCmd::Checklist(cmd) => run_checklist(client, json, cmd).await,
         CardCmd::Tag(cmd) => run_tag(client, json, cmd).await,
         CardCmd::File(cmd) => run_file(client, json, cmd).await,
@@ -405,36 +411,73 @@ async fn run_view(
     client: &KaitenClient,
     json: bool,
     card: &str,
-    comments: bool,
+    comments_flag: bool,
+    include: &[ViewSection],
 ) -> Result<(), CliError> {
+    if comments_flag {
+        eprintln!("warning: --comments is deprecated, use --include comments");
+    }
+    let with_links = include.contains(&ViewSection::ExternalLinks);
+    let with_comments = comments_flag || include.contains(&ViewSection::Comments);
     let card_id = parse_card_ref(card)?;
     let card = client.cards().get(card_id).await?;
+    let links = if with_links {
+        Some(client.external_links().list(card_id).await?)
+    } else {
+        None
+    };
+    let comments = if with_comments {
+        Some(client.comments().list(card_id).await?)
+    } else {
+        None
+    };
     if json {
-        if comments {
-            let list = client.comments().list(card_id).await?;
-            return output::print_json(&serde_json::json!({
-                "card": card,
-                "comments": list,
-            }));
+        if links.is_none() && comments.is_none() {
+            return output::print_json(&card);
         }
-        return output::print_json(&card);
+        let mut doc = serde_json::Map::new();
+        doc.insert("card".into(), serde_json::json!(card));
+        if let Some(links) = &links {
+            doc.insert("external_links".into(), serde_json::json!(links));
+        }
+        if let Some(comments) = &comments {
+            doc.insert("comments".into(), serde_json::json!(comments));
+        }
+        return output::print_json(&doc);
     }
     print_card_details(&card);
-    if comments {
-        let list = client.comments().list(card_id).await?;
-        println!();
-        println!("Comments:");
-        for comment in &list {
-            let author = comment
-                .author
-                .as_ref()
-                .map_or_else(|| "-".into(), output::user_label);
-            let date = date_cell(comment.created.as_deref());
-            println!("{date} {author}:");
-            println!("{}", comment.text);
-        }
+    if let Some(links) = &links {
+        print_links_section(links);
+    }
+    if let Some(comments) = &comments {
+        print_comments_section(comments);
     }
     Ok(())
+}
+
+fn print_links_section(links: &[kaiten_client::ExternalLink]) {
+    println!();
+    println!("Links:");
+    for link in links {
+        match link.description.as_deref().filter(|d| !d.is_empty()) {
+            Some(description) => println!("  {} {} - {description}", link.id, link.url),
+            None => println!("  {} {}", link.id, link.url),
+        }
+    }
+}
+
+fn print_comments_section(comments: &[kaiten_client::Comment]) {
+    println!();
+    println!("Comments:");
+    for comment in comments {
+        let author = comment
+            .author
+            .as_ref()
+            .map_or_else(|| "-".into(), output::user_label);
+        let date = date_cell(comment.created.as_deref());
+        println!("{date} {author}:");
+        println!("{}", comment.text);
+    }
 }
 
 struct CardCreateArgs {
@@ -671,6 +714,87 @@ async fn run_comment(
             Ok(())
         }
     }
+}
+
+async fn run_external_link(
+    client: &KaitenClient,
+    json: bool,
+    cmd: CardExternalLinkCmd,
+) -> Result<(), CliError> {
+    match cmd {
+        CardExternalLinkCmd::Add {
+            card,
+            url,
+            description,
+        } => {
+            let card_id = parse_card_ref(&card)?;
+            let url = link_url(&url)?;
+            let link = client
+                .external_links()
+                .add(card_id, &url, description.as_deref())
+                .await?;
+            if json {
+                return output::print_json(&link);
+            }
+            println!("{}", link.id);
+            Ok(())
+        }
+        CardExternalLinkCmd::List { card } => {
+            let card_id = parse_card_ref(&card)?;
+            let links = client.external_links().list(card_id).await?;
+            if json {
+                return output::print_json(&links);
+            }
+            let mut table = output::table(&["ID", "URL", "DESCRIPTION", "CREATED"]);
+            for link in &links {
+                table.add_row(vec![
+                    link.id.to_string(),
+                    truncate_text(&link.url, 70),
+                    truncate_text(link.description.as_deref().unwrap_or("-"), 40),
+                    date_cell(link.created.as_deref()),
+                ]);
+            }
+            println!("{table}");
+            Ok(())
+        }
+        CardExternalLinkCmd::Edit {
+            card,
+            link_id,
+            url,
+            description,
+        } => {
+            if url.is_none() && description.is_none() {
+                return Err(CliError::InvalidArg(
+                    "nothing to change: pass --url and/or --description".into(),
+                ));
+            }
+            let card_id = parse_card_ref(&card)?;
+            let url = url.as_deref().map(link_url).transpose()?;
+            let link = client
+                .external_links()
+                .update(card_id, link_id, url.as_deref(), description.as_deref())
+                .await?;
+            if json {
+                return output::print_json(&link);
+            }
+            println!("updated external link {} on card {card_id}", link.id);
+            Ok(())
+        }
+        CardExternalLinkCmd::Rm { card, link_id } => {
+            let card_id = parse_card_ref(&card)?;
+            client.external_links().remove(card_id, link_id).await?;
+            if json {
+                return output::print_json(&serde_json::json!({ "removed": true }));
+            }
+            println!("removed external link {link_id} from card {card_id}");
+            Ok(())
+        }
+    }
+}
+
+/// `--url` must be an absolute http(s) URL; the value is never echoed.
+fn link_url(raw: &str) -> Result<String, CliError> {
+    urls::absolute_http_url(raw).map_err(|e| CliError::InvalidArg(format!("--url {e}")))
 }
 
 async fn run_checklist(

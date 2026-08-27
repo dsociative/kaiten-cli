@@ -139,3 +139,128 @@ async fn card_view_garbage_ref_fails() {
         .code(1)
         .stderr(predicate::str::contains("invalid card reference"));
 }
+
+// --- issue #21: `--include` sections and the deprecated `--comments` ---
+
+const EXTERNAL_LINKS: &str = include_str!("fixtures/external_links_list.json");
+
+async fn mock_external_links(server: &MockServer, expect: u64) {
+    Mock::given(method("GET"))
+        .and(path("/cards/67089469/external-links"))
+        .and(header("Authorization", "Bearer test-token"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(EXTERNAL_LINKS, "application/json"))
+        .expect(expect)
+        .mount(server)
+        .await;
+}
+
+async fn mock_comments(server: &MockServer, expect: u64) {
+    Mock::given(method("GET"))
+        .and(path("/cards/67089469/comments"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(COMMENTS, "application/json"))
+        .expect(expect)
+        .mount(server)
+        .await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn card_view_include_external_links_makes_second_request_and_prints_section() {
+    let server = MockServer::start().await;
+    mock_card(&server).await;
+    mock_external_links(&server, 1).await;
+    mock_comments(&server, 0).await;
+    let tmp = tempfile::tempdir().unwrap();
+
+    kaiten(tmp.path(), &server.uri())
+        .args(["card", "view", "67089469", "--include", "external_links"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Links:"))
+        .stdout(predicate::str::contains("21177131"))
+        .stdout(predicate::str::contains("https://example.com/spike"))
+        .stdout(predicate::str::contains("Source"))
+        .stdout(predicate::str::contains("Comments:").not());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn card_view_include_both_sections_comma_separated() {
+    let server = MockServer::start().await;
+    mock_card(&server).await;
+    mock_external_links(&server, 1).await;
+    mock_comments(&server, 1).await;
+    let tmp = tempfile::tempdir().unwrap();
+
+    kaiten(tmp.path(), &server.uri())
+        .args([
+            "card",
+            "view",
+            "67089469",
+            "--include",
+            "external_links,comments",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Links:"))
+        .stdout(predicate::str::contains("Comments:"))
+        .stderr(predicate::str::contains("deprecated").not());
+}
+
+/// `--comments` keeps working but says what to use instead — on stderr, so
+/// stdout consumers are unaffected.
+#[tokio::test(flavor = "multi_thread")]
+async fn card_view_comments_flag_is_deprecated_but_still_works() {
+    let server = MockServer::start().await;
+    mock_card(&server).await;
+    mock_comments(&server, 1).await;
+    let tmp = tempfile::tempdir().unwrap();
+
+    kaiten(tmp.path(), &server.uri())
+        .args(["card", "view", "67089469", "--comments"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Comments:"))
+        .stderr(predicate::str::contains("--comments is deprecated"))
+        .stderr(predicate::str::contains("--include comments"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn card_view_json_include_external_links_adds_the_key() {
+    let server = MockServer::start().await;
+    mock_card(&server).await;
+    mock_external_links(&server, 1).await;
+    let tmp = tempfile::tempdir().unwrap();
+
+    let out = kaiten(tmp.path(), &server.uri())
+        .args([
+            "--json",
+            "card",
+            "view",
+            "67089469",
+            "--include",
+            "external_links",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let value: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(value["card"]["id"], 67_089_469, "{value}");
+    assert_eq!(value["external_links"][0]["id"], 21_177_131, "{value}");
+    assert!(value.get("comments").is_none(), "{value}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn card_view_include_rejects_an_unknown_section() {
+    let server = MockServer::start().await; // nothing may be requested
+    let tmp = tempfile::tempdir().unwrap();
+
+    kaiten(tmp.path(), &server.uri())
+        .args(["card", "view", "67089469", "--include", "attachments"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains("external_links"))
+        .stderr(predicate::str::contains("comments"));
+    assert!(server.received_requests().await.unwrap().is_empty());
+}

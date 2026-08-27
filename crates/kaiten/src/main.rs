@@ -6,6 +6,7 @@ mod error;
 mod mcp;
 mod output;
 mod properties;
+mod urls;
 
 use std::process::ExitCode;
 
