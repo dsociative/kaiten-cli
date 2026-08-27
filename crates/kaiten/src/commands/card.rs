@@ -7,6 +7,7 @@ use crate::cli::{
 use crate::config::Defaults;
 use crate::error::CliError;
 use crate::output;
+use crate::properties;
 
 /// Accepts a numeric card id or a browser URL containing `card/<id>`.
 pub fn parse_card_ref(s: &str) -> Result<u64, CliError> {
@@ -452,17 +453,15 @@ struct CardEditArgs {
     properties_json: Option<String>,
 }
 
-/// `--properties-json` must be a JSON OBJECT keyed as id_{property_id}.
+/// `--properties-json` must be a JSON OBJECT keyed as id_{property_id}; a JSON
+/// string holding such an object is accepted too (see `crate::properties`).
 fn parse_properties_json(raw: Option<String>) -> Result<Option<serde_json::Value>, CliError> {
     let Some(raw) = raw else { return Ok(None) };
     let value: serde_json::Value = serde_json::from_str(&raw)
         .map_err(|e| CliError::InvalidArg(format!("--properties-json is not valid JSON: {e}")))?;
-    if !value.is_object() {
-        return Err(CliError::InvalidArg(
-            "--properties-json must be a JSON object like '{\"id_612634\": [18929916]}'".into(),
-        ));
-    }
-    Ok(Some(value))
+    properties::coerce_object(value)
+        .map(Some)
+        .map_err(|msg| CliError::InvalidArg(format!("--properties-json {msg}")))
 }
 
 async fn run_create(

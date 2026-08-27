@@ -4,6 +4,7 @@ mod config;
 mod error;
 mod mcp;
 mod output;
+mod properties;
 
 use std::process::ExitCode;
 

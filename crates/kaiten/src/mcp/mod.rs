@@ -9,6 +9,7 @@ use rmcp::model::{CallToolResult, ContentBlock, ServerCapabilities, ServerInfo};
 use rmcp::{ErrorData as McpError, ServerHandler, tool, tool_handler, tool_router};
 
 use crate::error::CliError;
+use crate::properties;
 use projections::{
     CardDetail, CardSummary, ChecklistItemView, ChecklistView, CommentResult, CommentView,
     MemberView, MutationResult, TimeLogView, UserView,
@@ -32,8 +33,35 @@ pub struct KaitenMcp {
 /// "API error 403: Forbidden" or "rate limited, retry after 5s") reaches it
 /// verbatim. Parameter-validation/serialization errors from the framework
 /// stay protocol errors — this helper is only for API-call failures.
+/// Validation this crate does itself (the `properties` shape, see
+/// `coerce_properties`) uses the same tool-level shape as the framework's
+/// deserialization errors: `isError: true`, raised before any API call.
 fn error_result(err: &KaitenError) -> CallToolResult {
     CallToolResult::error(vec![ContentBlock::text(err.to_string())])
+}
+
+/// Validate the optional `properties` argument of create_card/update_card
+/// (issue #15): a JSON string holding an object is unwrapped, anything that
+/// is not an object is a tool-level error — the API used to ignore it and
+/// report success. The message is user-facing, see `try_args!`.
+fn coerce_properties(
+    value: Option<serde_json::Value>,
+) -> Result<Option<serde_json::Value>, String> {
+    value
+        .map(properties::coerce_object)
+        .transpose()
+        .map_err(|msg| format!("properties {msg}"))
+}
+
+/// `try_api!` for this crate's own argument validation: the `Err` is already
+/// a user-facing message, returned as a tool-level error before any API call.
+macro_rules! try_args {
+    ($e:expr) => {
+        match $e {
+            Ok(v) => v,
+            Err(msg) => return Ok(CallToolResult::error(vec![ContentBlock::text(msg)])),
+        }
+    };
 }
 
 /// Unwrap a `Result<T, KaitenError>` produced by a client call inside a tool
@@ -168,11 +196,13 @@ pub struct CreateCardParams {
     pub type_id: Option<u64>,
     /// Mark the card as ASAP
     pub asap: Option<bool>,
-    /// Custom property values keyed as "id_{property_id}" (see
-    /// list_custom_properties). Formats: select/multi-select = ARRAY of
+    /// Custom property values as a JSON OBJECT keyed as "id_{property_id}"
+    /// (see list_custom_properties). Formats: select/multi-select = ARRAY of
     /// option ids from list_property_select_values, e.g. {"id_612634":
     /// [18929916]}; string/number/url = plain value; date = {"date":
-    /// "2026-07-16", "time": "19:00", "tzOffset": 180}; null clears
+    /// "2026-07-16", "time": "19:00", "tzOffset": 180}; a property value of
+    /// null clears that property
+    #[schemars(with = "Option<serde_json::Map<String, serde_json::Value>>")]
     pub properties: Option<serde_json::Value>,
 }
 
@@ -189,11 +219,13 @@ pub struct UpdateCardParams {
     pub type_id: Option<u64>,
     /// Set or clear the ASAP flag
     pub asap: Option<bool>,
-    /// Custom property values keyed as "id_{property_id}" (see
-    /// list_custom_properties). Formats: select/multi-select = ARRAY of
+    /// Custom property values as a JSON OBJECT keyed as "id_{property_id}"
+    /// (see list_custom_properties). Formats: select/multi-select = ARRAY of
     /// option ids from list_property_select_values, e.g. {"id_612634":
     /// [18929916]}; string/number/url = plain value; date = {"date":
-    /// "2026-07-16", "time": "19:00", "tzOffset": 180}; null clears
+    /// "2026-07-16", "time": "19:00", "tzOffset": 180}; a property value of
+    /// null clears that property
+    #[schemars(with = "Option<serde_json::Map<String, serde_json::Value>>")]
     pub properties: Option<serde_json::Value>,
 }
 
@@ -599,6 +631,7 @@ impl KaitenMcp {
         &self,
         Parameters(p): Parameters<CreateCardParams>,
     ) -> Result<CallToolResult, McpError> {
+        let properties = try_args!(coerce_properties(p.properties));
         let req = CreateCard {
             board_id: p.board_id,
             title: p.title,
@@ -607,7 +640,7 @@ impl KaitenMcp {
             description: p.description,
             type_id: p.type_id,
             asap: p.asap,
-            properties: p.properties,
+            properties,
         };
         let card = try_api!(self.client.cards().create(&req).await);
         json_result(&MutationResult::new(&card, &self.web_base))
@@ -620,12 +653,13 @@ impl KaitenMcp {
         &self,
         Parameters(p): Parameters<UpdateCardParams>,
     ) -> Result<CallToolResult, McpError> {
+        let properties = try_args!(coerce_properties(p.properties));
         let req = UpdateCard {
             title: p.title,
             description: p.description,
             type_id: p.type_id,
             asap: p.asap,
-            properties: p.properties,
+            properties,
             ..Default::default()
         };
         let card = try_api!(self.client.cards().update(p.card_id, &req).await);
@@ -1200,6 +1234,8 @@ mod tests {
     const CARD_CREATE_FIXTURE: &str = include_str!("../../tests/fixtures/mcp_card_create.json");
     const USER_CURRENT_FIXTURE: &str = include_str!("../../tests/fixtures/mcp_user_current.json");
     const CARD_FULL_FIXTURE: &str = include_str!("../../tests/fixtures/mcp_card_full.json");
+    const CARD_WITH_PROPERTIES_FIXTURE: &str =
+        include_str!("../../tests/fixtures/card_get_full.json");
 
     fn mcp_for(server: &MockServer) -> KaitenMcp {
         let client = KaitenClient::new(&server.uri(), "test-token").unwrap();
@@ -1942,5 +1978,182 @@ mod tests {
         ];
         expected.sort_unstable();
         assert_eq!(names, expected);
+    }
+    fn update_params(properties: serde_json::Value) -> super::UpdateCardParams {
+        super::UpdateCardParams {
+            card_id: 67_089_469,
+            title: None,
+            description: None,
+            type_id: None,
+            asap: None,
+            properties: Some(properties),
+        }
+    }
+
+    /// Issue #15: a JSON *string* holding the object is applied, not dropped.
+    #[tokio::test]
+    async fn update_card_parses_stringified_properties_object() {
+        let server = MockServer::start().await;
+        Mock::given(method("PATCH"))
+            .and(path("/cards/67089469"))
+            .and(body_json(serde_json::json!({
+                "properties": { "id_612634": [18_929_916] }
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_string(CARD_CREATE_FIXTURE))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let mcp = mcp_for(&server);
+        let result = mcp
+            .update_card(Parameters(update_params(serde_json::json!(
+                "{\"id_612634\": [18929916]}"
+            ))))
+            .await
+            .unwrap();
+        assert_ne!(result.is_error, Some(true), "{}", tool_text(&result));
+    }
+
+    /// Issue #15: the wrong shape is a tool-level error raised before any
+    /// API call — previously it was forwarded and silently ignored.
+    #[tokio::test]
+    async fn update_card_rejects_non_object_properties_before_any_request() {
+        let server = MockServer::start().await;
+        let mcp = mcp_for(&server);
+        for bad in [
+            serde_json::json!("abc"),
+            serde_json::json!("[1]"),
+            serde_json::json!(42),
+            serde_json::json!([{ "id_1": 2 }]),
+        ] {
+            let result = mcp
+                .update_card(Parameters(update_params(bad.clone())))
+                .await
+                .unwrap();
+            assert_eq!(result.is_error, Some(true), "{bad}");
+            let text = tool_text(&result);
+            assert!(text.starts_with("properties "), "{text}");
+            assert!(
+                text.contains("JSON object") || text.contains("not valid JSON"),
+                "{text}"
+            );
+        }
+        assert!(
+            server.received_requests().await.unwrap().is_empty(),
+            "invalid properties must never reach the API"
+        );
+    }
+
+    #[tokio::test]
+    async fn create_card_parses_stringified_properties_object() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/cards"))
+            .and(wiremock::matchers::body_partial_json(serde_json::json!({
+                "board_id": 1,
+                "properties": { "id_612634": [18_929_916] }
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_string(CARD_CREATE_FIXTURE))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let mcp = mcp_for(&server);
+        let result = mcp
+            .create_card(Parameters(CreateCardParams {
+                board_id: 1,
+                title: "t".into(),
+                column_id: None,
+                lane_id: None,
+                description: None,
+                type_id: None,
+                asap: None,
+                properties: Some(serde_json::json!("{\"id_612634\": [18929916]}")),
+            }))
+            .await
+            .unwrap();
+        assert_ne!(result.is_error, Some(true), "{}", tool_text(&result));
+    }
+
+    #[tokio::test]
+    async fn create_card_rejects_non_object_properties_before_any_request() {
+        let server = MockServer::start().await;
+        let mcp = mcp_for(&server);
+        let result = mcp
+            .create_card(Parameters(CreateCardParams {
+                board_id: 1,
+                title: "t".into(),
+                column_id: None,
+                lane_id: None,
+                description: None,
+                type_id: None,
+                asap: None,
+                properties: Some(serde_json::json!("nope")),
+            }))
+            .await
+            .unwrap();
+        assert_eq!(result.is_error, Some(true));
+        assert!(
+            tool_text(&result).starts_with("properties "),
+            "{}",
+            tool_text(&result)
+        );
+        assert!(server.received_requests().await.unwrap().is_empty());
+    }
+
+    /// Issue #15: the mutation result echoes the resulting properties so the
+    /// agent can verify its write without a second call.
+    #[tokio::test]
+    async fn update_card_echoes_properties_in_mutation_result() {
+        let server = MockServer::start().await;
+        Mock::given(method("PATCH"))
+            .and(path("/cards/67089469"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(CARD_WITH_PROPERTIES_FIXTURE))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let mcp = mcp_for(&server);
+        let result = mcp
+            .update_card(Parameters(update_params(
+                serde_json::json!({ "id_19": "S" }),
+            )))
+            .await
+            .unwrap();
+        let value: serde_json::Value = serde_json::from_str(&tool_text(&result)).unwrap();
+        assert_eq!(
+            value["properties"],
+            serde_json::json!({ "id_19": "S" }),
+            "{value}"
+        );
+    }
+
+    /// Issue #15: a client can tell from the schema that an object is required.
+    #[test]
+    fn create_and_update_card_schemas_type_properties_as_object() {
+        let tools = KaitenMcp::tool_router().list_all();
+        for name in ["create_card", "update_card"] {
+            let tool = tools.iter().find(|t| t.name == name).unwrap();
+            let schema = serde_json::to_value(tool.input_schema.as_ref()).unwrap();
+            let prop = &schema["properties"]["properties"];
+            // schemars renders `Option<Map>` as `"type": ["object", "null"]`;
+            // accept the scalar, the type array and an `anyOf` encoding.
+            let mentions_object = |v: &serde_json::Value| {
+                v == "object"
+                    || v.as_array()
+                        .is_some_and(|ts| ts.iter().any(|t| t == "object"))
+            };
+            let object_typed = mentions_object(&prop["type"])
+                || prop["anyOf"]
+                    .as_array()
+                    .is_some_and(|alts| alts.iter().any(|s| mentions_object(&s["type"])));
+            assert!(object_typed, "{name}: {prop}");
+            assert!(
+                prop["description"]
+                    .as_str()
+                    .is_some_and(|d| d.contains("id_")),
+                "{name} lost its description: {prop}"
+            );
+        }
     }
 }
