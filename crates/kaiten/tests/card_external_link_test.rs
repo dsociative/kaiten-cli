@@ -47,6 +47,7 @@ async fn list_json_prints_models() {
     Mock::given(method("GET"))
         .and(path("/cards/67089469/external-links"))
         .respond_with(ResponseTemplate::new(200).set_body_raw(LIST, "application/json"))
+        .expect(1)
         .mount(&server)
         .await;
     let tmp = tempfile::tempdir().unwrap();
@@ -231,4 +232,59 @@ async fn rm_unknown_link_surfaces_the_api_error() {
         .failure()
         .code(1)
         .stderr(predicate::str::contains("API error 403"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn edit_url_patches_the_url() {
+    let server = MockServer::start().await;
+    Mock::given(method("PATCH"))
+        .and(path("/cards/67089469/external-links/21177131"))
+        .and(body_json(
+            serde_json::json!({ "url": "https://example.org/moved" }),
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(ADDED, "application/json"))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let tmp = tempfile::tempdir().unwrap();
+
+    kaiten(&server.uri(), tmp.path())
+        .args([
+            "card",
+            "external-link",
+            "edit",
+            "67089469",
+            "21177131",
+            "--url",
+            "https://example.org/moved",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("updated external link 21177131"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn edit_rejects_a_bad_url_without_any_request() {
+    let server = MockServer::start().await;
+    let tmp = tempfile::tempdir().unwrap();
+
+    kaiten(&server.uri(), tmp.path())
+        .args([
+            "card",
+            "external-link",
+            "edit",
+            "67089469",
+            "21177131",
+            "--url",
+            "notaurl",
+            "--description",
+            "still not sent",
+        ])
+        .assert()
+        .failure()
+        .code(1)
+        .stderr(predicate::str::contains(
+            "--url is not an absolute http(s) URL",
+        ));
+    assert!(server.received_requests().await.unwrap().is_empty());
 }

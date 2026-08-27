@@ -518,8 +518,10 @@ pub struct SelectValue {
 }
 
 /// An external link of a card (`Links (common links)` in Kaiten): a URL
-/// with an optional description. `GET /cards/{id}` embeds these too, under
-/// `external_links`.
+/// with an optional description. `GET /cards/{id}` embeds them under
+/// `external_links` as well, but [`Card`] does not model that field yet
+/// (adding one would be a breaking change), so they are read through
+/// [`crate::api::external_links::ExternalLinks::list`].
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ExternalLink {
     pub id: u64,

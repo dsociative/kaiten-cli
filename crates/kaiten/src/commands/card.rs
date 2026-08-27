@@ -457,7 +457,7 @@ async fn run_view(
 
 fn print_links_section(links: &[kaiten_client::ExternalLink]) {
     println!();
-    println!("Links:");
+    println!("External links:");
     for link in links {
         match link.description.as_deref().filter(|d| !d.is_empty()) {
             Some(description) => println!("  {} {} - {description}", link.id, link.url),
@@ -750,7 +750,13 @@ async fn run_external_link(
                 table.add_row(vec![
                     link.id.to_string(),
                     truncate_text(&link.url, 70),
-                    truncate_text(link.description.as_deref().unwrap_or("-"), 40),
+                    truncate_text(
+                        link.description
+                            .as_deref()
+                            .filter(|d| !d.is_empty())
+                            .unwrap_or("-"),
+                        40,
+                    ),
                     date_cell(link.created.as_deref()),
                 ]);
             }

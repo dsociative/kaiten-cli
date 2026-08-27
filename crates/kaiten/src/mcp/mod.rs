@@ -61,12 +61,6 @@ fn coerce_properties(
 
 /// `try_api!` for this crate's own argument validation: the `Err` is already
 /// a user-facing message, returned as a tool-level error before any API call.
-/// `url` of an external link must be an absolute http(s) URL; the value is
-/// never echoed (it may hold a secret).
-fn link_url(raw: &str) -> Result<String, String> {
-    urls::absolute_http_url(raw).map_err(|e| format!("url {e}"))
-}
-
 macro_rules! try_args {
     ($e:expr) => {
         match $e {
@@ -74,6 +68,12 @@ macro_rules! try_args {
             Err(msg) => return Ok(CallToolResult::error(vec![ContentBlock::text(msg)])),
         }
     };
+}
+
+/// `url` of an external link must be an absolute http(s) URL; the value is
+/// never echoed (it may hold a secret).
+fn link_url(raw: &str) -> Result<String, String> {
+    urls::absolute_http_url(raw).map_err(|e| format!("url {e}"))
 }
 
 /// Unwrap a `Result<T, KaitenError>` produced by a client call inside a tool
@@ -178,7 +178,6 @@ pub struct GetCardParams {
     /// Extra sections to fetch with the card, one more request each:
     /// "external_links" (Links (common links)), "comments". Omit for the
     /// plain card.
-    #[serde(default)]
     pub include: Option<Vec<IncludeSection>>,
 }
 
@@ -1398,7 +1397,7 @@ impl ServerHandler for KaitenMcp {
         let mut info = ServerInfo::default();
         info.instructions = Some(
             "Kaiten tracker tools: browse spaces, boards and cards, create and edit \
-             cards, manage members, comments and checklists. Start with list_spaces \
+             cards, manage members, comments, checklists and external links. Start with list_spaces \
              to discover structure, or list_cards with mine=true to see the current \
              user's cards."
                 .into(),
@@ -2626,7 +2625,7 @@ mod tests {
         Mock::given(method("POST"))
             .and(path("/cards/67089469/external-links"))
             .and(header("Authorization", "Bearer test-token"))
-            .and(wiremock::matchers::body_json(serde_json::json!({
+            .and(body_json(serde_json::json!({
                 "url": "https://example.com/spike",
                 "description": "Source"
             })))
@@ -2682,7 +2681,7 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("PATCH"))
             .and(path("/cards/67089469/external-links/21177131"))
-            .and(wiremock::matchers::body_json(serde_json::json!({
+            .and(body_json(serde_json::json!({
                 "description": "patched"
             })))
             .respond_with(
@@ -2706,6 +2705,57 @@ mod tests {
         assert_ne!(result.is_error, Some(true), "{}", tool_text(&result));
         let link: serde_json::Value = serde_json::from_str(&tool_text(&result)).unwrap();
         assert_eq!(link["id"], 21_177_131);
+    }
+
+    #[tokio::test]
+    async fn update_card_external_link_sends_both_fields_when_given() {
+        let server = MockServer::start().await;
+        Mock::given(method("PATCH"))
+            .and(path("/cards/67089469/external-links/21177131"))
+            .and(body_json(serde_json::json!({
+                "url": "https://example.org/moved",
+                "description": "moved"
+            })))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_raw(EXTERNAL_LINK_ADD_FIXTURE, "application/json"),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        let mcp = mcp_for(&server);
+
+        let result = mcp
+            .update_card_external_link(Parameters(UpdateCardExternalLinkParams {
+                card_id: 67_089_469,
+                link_id: 21_177_131,
+                url: Some("https://example.org/moved".into()),
+                description: Some("moved".into()),
+            }))
+            .await
+            .unwrap();
+        assert_ne!(result.is_error, Some(true), "{}", tool_text(&result));
+    }
+
+    #[tokio::test]
+    async fn update_card_external_link_rejects_a_bad_url_before_any_request() {
+        let server = MockServer::start().await;
+        let mcp = mcp_for(&server);
+
+        let result = mcp
+            .update_card_external_link(Parameters(UpdateCardExternalLinkParams {
+                card_id: 67_089_469,
+                link_id: 21_177_131,
+                url: Some("https://user:s3cret@host/x".into()),
+                description: Some("not sent".into()),
+            }))
+            .await
+            .unwrap();
+        assert_eq!(result.is_error, Some(true));
+        let text = tool_text(&result);
+        assert!(text.starts_with("url "), "{text}");
+        assert!(!text.contains("s3cret"), "{text}");
+        assert!(server.received_requests().await.unwrap().is_empty());
     }
 
     #[tokio::test]
@@ -2829,9 +2879,15 @@ mod tests {
         let tools = KaitenMcp::tool_router().list_all();
         let get_card = tools.iter().find(|t| t.name == "get_card").unwrap();
         let schema = serde_json::to_value(&get_card.input_schema).unwrap();
-        let text = schema.to_string();
-        assert!(text.contains("external_links"), "{schema}");
-        assert!(text.contains("\"comments\""), "{schema}");
+        assert_eq!(
+            schema["properties"]["include"]["items"]["$ref"], "#/$defs/IncludeSection",
+            "{schema}"
+        );
+        assert_eq!(
+            schema["$defs"]["IncludeSection"]["enum"],
+            serde_json::json!(["external_links", "comments"]),
+            "{schema}"
+        );
         assert!(
             schema["required"]
                 .as_array()

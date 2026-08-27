@@ -400,6 +400,7 @@ pub enum CardExternalLinkCmd {
         /// Absolute http(s) URL
         #[arg(long)]
         url: String,
+        /// Optional description shown next to the link
         #[arg(long)]
         description: Option<String>,
     },
@@ -410,6 +411,7 @@ pub enum CardExternalLinkCmd {
         /// New absolute http(s) URL
         #[arg(long)]
         url: Option<String>,
+        /// New description
         #[arg(long)]
         description: Option<String>,
     },

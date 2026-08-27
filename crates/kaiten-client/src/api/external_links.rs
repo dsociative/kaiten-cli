@@ -46,7 +46,8 @@ impl ExternalLinks<'_> {
     }
 
     /// PATCH /cards/{card_id}/external-links/{link_id} — only the given fields
-    /// are sent (the API answers 404 to PUT).
+    /// are sent (the API answers 404 to PUT). Pass at least one of them: with
+    /// both `None` the request body is `{}`.
     pub async fn update(
         &self,
         card_id: u64,

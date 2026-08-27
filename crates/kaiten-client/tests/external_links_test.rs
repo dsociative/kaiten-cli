@@ -123,3 +123,56 @@ async fn remove_deletes_the_card_scoped_link() {
         .await
         .unwrap();
 }
+
+#[tokio::test]
+async fn update_sends_url_and_description_when_both_are_given() {
+    let server = MockServer::start().await;
+    Mock::given(method("PATCH"))
+        .and(path("/cards/67089469/external-links/21177131"))
+        .and(body_json(serde_json::json!({
+            "url": "https://example.org/moved",
+            "description": "moved"
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(ADDED, "application/json"))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = KaitenClient::new(&server.uri(), "test-token").unwrap();
+    client
+        .external_links()
+        .update(
+            67_089_469,
+            21_177_131,
+            Some("https://example.org/moved"),
+            Some("moved"),
+        )
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn update_with_url_only_sends_only_the_url() {
+    let server = MockServer::start().await;
+    Mock::given(method("PATCH"))
+        .and(path("/cards/67089469/external-links/21177131"))
+        .and(body_json(
+            serde_json::json!({ "url": "https://example.org/moved" }),
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(ADDED, "application/json"))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = KaitenClient::new(&server.uri(), "test-token").unwrap();
+    client
+        .external_links()
+        .update(
+            67_089_469,
+            21_177_131,
+            Some("https://example.org/moved"),
+            None,
+        )
+        .await
+        .unwrap();
+}

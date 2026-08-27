@@ -175,7 +175,7 @@ async fn card_view_include_external_links_makes_second_request_and_prints_sectio
         .args(["card", "view", "67089469", "--include", "external_links"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Links:"))
+        .stdout(predicate::str::contains("External links:"))
         .stdout(predicate::str::contains("21177131"))
         .stdout(predicate::str::contains("https://example.com/spike"))
         .stdout(predicate::str::contains("Source"))
@@ -200,7 +200,7 @@ async fn card_view_include_both_sections_comma_separated() {
         ])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Links:"))
+        .stdout(predicate::str::contains("External links:"))
         .stdout(predicate::str::contains("Comments:"))
         .stderr(predicate::str::contains("deprecated").not());
 }
@@ -219,8 +219,85 @@ async fn card_view_comments_flag_is_deprecated_but_still_works() {
         .assert()
         .success()
         .stdout(predicate::str::contains("Comments:"))
+        .stdout(predicate::str::contains("deprecated").not())
         .stderr(predicate::str::contains("--comments is deprecated"))
         .stderr(predicate::str::contains("--include comments"));
+}
+
+/// The pre-`--include` JSON contract: `--comments --json` prints exactly
+/// `{card, comments}` and nothing else on stdout.
+#[tokio::test(flavor = "multi_thread")]
+async fn card_view_comments_json_shape_is_unchanged() {
+    let server = MockServer::start().await;
+    mock_card(&server).await;
+    mock_comments(&server, 1).await;
+    let tmp = tempfile::tempdir().unwrap();
+
+    let out = kaiten(tmp.path(), &server.uri())
+        .args(["--json", "card", "view", "67089469", "--comments"])
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("--comments is deprecated"))
+        .get_output()
+        .stdout
+        .clone();
+    let value: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    let mut keys: Vec<&str> = value
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    keys.sort_unstable();
+    assert_eq!(keys, ["card", "comments"], "{value}");
+    assert_eq!(value["card"]["id"], 67_089_469);
+    assert!(value["comments"].is_array());
+}
+
+/// `--comments` together with `--include comments` fetches comments once.
+#[tokio::test(flavor = "multi_thread")]
+async fn card_view_comments_flag_and_include_comments_fetch_once() {
+    let server = MockServer::start().await;
+    mock_card(&server).await;
+    mock_comments(&server, 1).await;
+    let tmp = tempfile::tempdir().unwrap();
+
+    kaiten(tmp.path(), &server.uri())
+        .args([
+            "card",
+            "view",
+            "67089469",
+            "--comments",
+            "--include",
+            "comments",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Comments:"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn card_view_include_can_be_repeated() {
+    let server = MockServer::start().await;
+    mock_card(&server).await;
+    mock_external_links(&server, 1).await;
+    mock_comments(&server, 1).await;
+    let tmp = tempfile::tempdir().unwrap();
+
+    kaiten(tmp.path(), &server.uri())
+        .args([
+            "card",
+            "view",
+            "67089469",
+            "--include",
+            "external_links",
+            "--include",
+            "comments",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("External links:"))
+        .stdout(predicate::str::contains("Comments:"));
 }
 
 #[tokio::test(flavor = "multi_thread")]
