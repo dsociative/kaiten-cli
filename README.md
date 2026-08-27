@@ -12,7 +12,7 @@ Command-line client and MCP server for the [Kaiten](https://kaiten.ru) tracker,
 in the spirit of `gh` / `glab`.
 
 - Browse spaces, boards and cards from the terminal
-- Create, edit, move and archive cards; manage members, tags, comments and checklists
+- Create, edit, move and archive cards; manage members, tags, comments, checklists and external links
 - `--json` output on every command for scripting
 - Built-in MCP server (`kaiten mcp serve`) so coding agents can work with the tracker
 - Raw API escape hatch: `kaiten api GET /users/current`
@@ -88,7 +88,7 @@ kaiten board view 456                    # columns and lanes (ids for `card move
 
 kaiten card list --mine
 kaiten card list --board 456 --query "deploy" --limit 20
-kaiten card view 67089469 --comments     # a full card URL works too
+kaiten card view 67089469 --include external_links,comments   # a full card URL works too
 kaiten card create --board 456 --title "Fix the flaky test" --description "..."
 kaiten card edit 67089469 --title "New title" --asap true
 kaiten card move 67089469 --column 6308511
@@ -97,6 +97,8 @@ kaiten card archive 67089469
 kaiten card member add 67089469 user@example.com   # user id or email
 kaiten card member responsible 67089469 user@example.com
 kaiten card comment add 67089469 --body "Done, please review"
+kaiten card external-link add 67089469 --url https://example.com/spec --description "Spec"
+kaiten card external-link list 67089469          # also edit / rm
 kaiten card checklist add 67089469 --name "Release steps"
 kaiten card checklist item add 67089469 91011 --text "Bump version"
 kaiten card checklist item check 67089469 91011 121314
@@ -118,6 +120,10 @@ kaiten api POST /cards --data '{"board_id":456,"title":"Raw"}'
 
 Add `--json` to any command to print the raw JSON of the API response.
 
+`card view --include external_links,comments` fetches extra sections with the card
+(one request each; the names match the MCP `get_card` `include` values).
+`card view --comments` still works but is deprecated — use `--include comments`.
+
 ## Shell completion
 
 ```sh
@@ -133,9 +139,11 @@ kaiten completion fish > ~/.config/fish/completions/kaiten.fish
 
 ## MCP server
 
-The same binary is an MCP server (stdio transport, 36 tools mirroring the CLI,
+The same binary is an MCP server (stdio transport, 40 tools mirroring the CLI,
 including compact card projections and a cursor-based `poll_updates` for
-event-like agent workflows).
+event-like agent workflows). `get_card` takes an optional
+`include: ["external_links", "comments"]` to return those sections in the same
+call (one extra request each).
 
 Claude Code:
 
@@ -183,7 +191,7 @@ by area (✅ covered, ◐ partial, — not covered):
 | Users list (id lookup) | ✅ | ✅ |
 | Card links: children / parents / blockers | ✅ `card link/unlink/unblock` | ✅ `link_cards` etc. |
 | Files: attach / detach / list / download | ✅ (uploads get a PUBLIC url!) | ✅ (`download_file` saves locally) |
-| External links | — | — |
+| External links (Links (common links)): list / add / edit / remove | ✅ `card external-link`, `card view --include external_links` | ✅ four tools + `get_card` `include` |
 | Custom properties: reference + set values | ✅ `property list/values`, `--properties-json` | ✅ two tools + `properties` (a JSON object — a wrong shape is rejected before the API call; mutations echo the resulting `properties`) |
 | Time logs | ✅ `card time add/list` | ✅ |
 | Events: polling for changes | — | ✅ `poll_updates` (cursor-based) |
