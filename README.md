@@ -43,7 +43,7 @@ user profile → API tokens), then:
 
 ```sh
 kaiten auth login    # asks for the domain ("mycompany") and token, verifies them
-kaiten auth status   # shows domain, current user and where the token came from
+kaiten auth status   # shows domain, current user, where the URL and token came from
 ```
 
 On-premise installations have no `*.kaiten.ru` domain — log in with the full API
@@ -155,7 +155,8 @@ Any other MCP client:
 ```
 
 Authentication is shared with the CLI: run `kaiten auth login` once, or export
-`KAITEN_DOMAIN` / `KAITEN_TOKEN` (or `KAITEN_BASE_URL` for an on-premise installation) in the client configuration. Logs go to stderr
+`KAITEN_DOMAIN` / `KAITEN_TOKEN` (or `KAITEN_BASE_URL` for an on-premise
+installation) in the client configuration. Logs go to stderr
 only — stdout carries the MCP protocol.
 
 ## API coverage

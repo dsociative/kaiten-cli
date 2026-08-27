@@ -31,7 +31,10 @@ async fn login(
     token: Option<String>,
 ) -> Result<(), CliError> {
     let target = match (domain, base_url) {
-        (_, Some(url)) => LoginTarget::BaseUrl(validate_base_url(&url)?),
+        (None, Some(url)) => LoginTarget::BaseUrl(validate_base_url(&url)?),
+        (Some(_), Some(_)) => {
+            unreachable!("clap group \"target\" makes --domain and --base-url exclusive")
+        }
         (domain, None) => {
             let domain = match domain {
                 Some(domain) => domain,
@@ -60,10 +63,11 @@ async fn login(
         }
     };
     let client = KaitenClient::new(&api_base, &token)?;
-    let user = match client.users().current().await {
-        Ok(user) => user,
-        Err(err) => return Err(login_error(&target, err)),
-    };
+    let user = client
+        .users()
+        .current()
+        .await
+        .map_err(|err| login_error(&target, &api_base, err))?;
 
     let mut file = FileConfig::load()?;
     // Keep exactly one of domain/base_url so `auth status` never shows a stale pair.
@@ -80,44 +84,51 @@ async fn login(
     file.token = Some(token);
     file.save()?;
 
-    match &target {
-        LoginTarget::BaseUrl(url) => {
-            println!("Logged in to {url} as {}", output::user_label(&user));
-        }
-        LoginTarget::Domain(domain) => {
-            println!(
-                "Logged in to {domain}.kaiten.ru as {}",
-                output::user_label(&user)
-            );
-        }
-    }
+    let where_ = match &target {
+        LoginTarget::BaseUrl(url) => url.clone(),
+        LoginTarget::Domain(domain) => format!("{domain}.kaiten.ru"),
+    };
+    println!("Logged in to {where_} as {}", output::user_label(&user));
     Ok(())
 }
 
-/// `--base-url` must be an absolute URL; the trailing slash is dropped so the
-/// client can append `/users/current` and friends.
+/// `--base-url` must be an absolute http(s) URL without query or fragment;
+/// the trailing slash is dropped so the client can append `/users/current`
+/// and friends.
 fn validate_base_url(raw: &str) -> Result<String, CliError> {
+    const EXPECTED: &str = "expected an http(s) URL like https://host/api/latest";
     let url = raw.trim().trim_end_matches('/');
     match url::Url::parse(url) {
-        Ok(parsed) if parsed.has_host() && ["http", "https"].contains(&parsed.scheme()) => {
+        Ok(parsed)
+            if parsed.has_host()
+                && ["http", "https"].contains(&parsed.scheme())
+                && parsed.query().is_none()
+                && parsed.fragment().is_none() =>
+        {
             Ok(url.to_string())
         }
         Ok(_) => Err(CliError::InvalidArg(format!(
-            "--base-url is not a URL: {raw} (expected https://host/api/latest)"
+            "--base-url must be an http(s) URL without query or fragment: {raw} ({EXPECTED})"
         ))),
         Err(e) => Err(CliError::InvalidArg(format!(
-            "--base-url is not a URL: {raw}: {e} (expected https://host/api/latest)"
+            "--base-url is not a URL: {raw}: {e} ({EXPECTED})"
         ))),
     }
 }
 
-/// A 404 from `/users/current` on an explicit base URL almost always means
-/// the API prefix is missing from it.
-fn login_error(target: &LoginTarget, err: KaitenError) -> CliError {
+/// On an explicit base URL, a 404 from `/users/current` — or a non-JSON
+/// answer, which is what Kaiten's web root returns for any path — almost
+/// always means the API prefix is missing. Lead with that; real servers
+/// send whole HTML pages as the error body.
+fn login_error(target: &LoginTarget, api_base: &str, err: KaitenError) -> CliError {
+    const HINT: &str = "base URL must include the API prefix, e.g. https://host/api/latest";
     match (target, &err) {
-        (LoginTarget::BaseUrl(_), KaitenError::Api { status: 404, .. }) => CliError::Config(
-            format!("{err}; base URL must include the API prefix, e.g. https://host/api/latest"),
+        (LoginTarget::BaseUrl(_), KaitenError::Api { status: 404, .. }) => CliError::InvalidArg(
+            format!("{HINT} (GET {api_base}/users/current returned HTTP 404)"),
         ),
+        (LoginTarget::BaseUrl(_), KaitenError::Decode { .. }) => CliError::InvalidArg(format!(
+            "{HINT} (GET {api_base}/users/current returned something that is not JSON: {err})"
+        )),
         _ => CliError::Api(err),
     }
 }

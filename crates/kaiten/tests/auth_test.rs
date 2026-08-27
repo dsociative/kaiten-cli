@@ -166,6 +166,8 @@ async fn status_reports_file_token_source_and_domain() {
         .assert()
         .success()
         .stdout(predicate::str::contains("domain:       mycompany"))
+        // the mock is only reachable through KAITEN_BASE_URL, which wins
+        .stdout(predicate::str::contains("url source:   env"))
         .stdout(predicate::str::contains("token source: file"));
 }
 
@@ -259,6 +261,8 @@ async fn login_with_invalid_base_url_fails_before_any_request() {
     let server = MockServer::start().await; // no mocks
     let tmp = tempfile::tempdir().unwrap();
     kaiten(tmp.path())
+        // the env hook must not rescue an invalid flag value
+        .env("KAITEN_BASE_URL", server.uri())
         .args(["auth", "login", "--base-url", "not a url", "--token", "t"])
         .assert()
         .failure()
@@ -270,7 +274,16 @@ async fn login_with_invalid_base_url_fails_before_any_request() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn login_with_base_url_missing_api_prefix_hints_and_saves_nothing() {
-    let server = MockServer::start().await; // /wrong/users/current is not mocked → 404
+    let server = MockServer::start().await;
+    // real servers answer with an HTML 404 page, not an empty body
+    Mock::given(method("GET"))
+        .and(path("/wrong/users/current"))
+        .respond_with(ResponseTemplate::new(404).set_body_raw(
+            "<!DOCTYPE html><html><body><h1>Not Found</h1></body></html>",
+            "text/html",
+        ))
+        .mount(&server)
+        .await;
     let tmp = tempfile::tempdir().unwrap();
     kaiten(tmp.path())
         .args([
@@ -284,13 +297,112 @@ async fn login_with_base_url_missing_api_prefix_hints_and_saves_nothing() {
         .assert()
         .failure()
         .code(1)
-        .stderr(predicate::str::contains("404"))
+        .stderr(predicate::str::starts_with(
+            "kaiten: base URL must include the API prefix",
+        ))
+        .stderr(predicate::str::contains("HTTP 404"))
         .stderr(predicate::str::contains("api/latest"));
     assert!(!tmp.path().join("config.toml").exists());
 }
 
+/// Kaiten cloud's web root answers 200 with the SPA page for any path — a
+/// base URL without the API prefix then fails to decode, not with a 404.
 #[tokio::test(flavor = "multi_thread")]
-async fn status_reports_file_base_url_source() {
+async fn login_with_base_url_pointing_at_the_web_app_hints_too() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/current"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_raw("<!DOCTYPE html><html><body>app</body></html>", "text/html"),
+        )
+        .mount(&server)
+        .await;
+    let tmp = tempfile::tempdir().unwrap();
+    kaiten(tmp.path())
+        .args(["auth", "login", "--base-url", &server.uri(), "--token", "t"])
+        .assert()
+        .failure()
+        .code(1)
+        .stderr(predicate::str::starts_with(
+            "kaiten: base URL must include the API prefix",
+        ))
+        .stderr(predicate::str::contains("not JSON"));
+    assert!(!tmp.path().join("config.toml").exists());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn login_rejects_base_url_with_query_or_fragment_or_non_http_scheme() {
+    let tmp = tempfile::tempdir().unwrap();
+    for bad in [
+        "https://host/api/latest?x=1",
+        "https://host/api/latest#frag",
+        "ftp://host/api/latest",
+    ] {
+        kaiten(tmp.path())
+            .args(["auth", "login", "--base-url", bad, "--token", "t"])
+            .assert()
+            .failure()
+            .code(1)
+            .stderr(predicate::str::contains("http(s) URL"));
+    }
+    assert!(!tmp.path().join("config.toml").exists());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn login_flag_base_url_wins_over_env_base_url() {
+    let flag_server = MockServer::start().await;
+    let env_server = MockServer::start().await;
+    mock_current_user(&flag_server, "t").await;
+    let tmp = tempfile::tempdir().unwrap();
+
+    kaiten(tmp.path())
+        .env("KAITEN_BASE_URL", env_server.uri())
+        .args([
+            "auth",
+            "login",
+            "--base-url",
+            &flag_server.uri(),
+            "--token",
+            "t",
+        ])
+        .assert()
+        .success();
+    assert!(env_server.received_requests().await.unwrap().is_empty());
+    let body = std::fs::read_to_string(tmp.path().join("config.toml")).unwrap();
+    assert!(body.contains(&flag_server.uri()), "{body}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn login_with_domain_clears_a_previous_base_url_and_writes_no_base_url_line() {
+    let server = MockServer::start().await;
+    mock_current_user(&server, "new-token").await;
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::write(
+        tmp.path().join("config.toml"),
+        "base_url = \"https://old.example/api/latest\"\ntoken = \"old-token\"\n",
+    )
+    .unwrap();
+
+    kaiten(tmp.path())
+        .env("KAITEN_BASE_URL", server.uri())
+        .args([
+            "auth",
+            "login",
+            "--domain",
+            "mycompany",
+            "--token",
+            "new-token",
+        ])
+        .assert()
+        .success();
+    let body = std::fs::read_to_string(tmp.path().join("config.toml")).unwrap();
+    assert!(!body.contains("base_url"), "{body}");
+    assert!(body.contains("domain = \"mycompany\""), "{body}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn status_reports_env_base_url_over_file_base_url_and_env_domain_source() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/users/current"))
@@ -302,23 +414,22 @@ async fn status_reports_file_base_url_source() {
     let tmp = tempfile::tempdir().unwrap();
     std::fs::write(
         tmp.path().join("config.toml"),
-        format!("base_url = \"{}\"\ntoken = \"file-token\"\n", server.uri()),
+        "base_url = \"https://ignored.example/api/latest\"\ntoken = \"file-token\"\n",
     )
     .unwrap();
 
+    // KAITEN_BASE_URL beats the file base_url
     kaiten(tmp.path())
+        .env("KAITEN_BASE_URL", server.uri())
         .args(["auth", "status"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("domain:       -"))
-        .stdout(predicate::str::contains(format!(
-            "base_url:     {}",
-            server.uri()
-        )))
-        .stdout(predicate::str::contains("url source:   file"))
-        .stdout(predicate::str::contains("token source: file"));
+        .stdout(predicate::str::contains("url source:   env\n"));
 
+    // --json carries the same value (KAITEN_DOMAIN set too: the base URL still wins)
     let out = kaiten(tmp.path())
+        .env("KAITEN_DOMAIN", "envdomain")
+        .env("KAITEN_BASE_URL", server.uri())
         .args(["--json", "auth", "status"])
         .assert()
         .success()
@@ -326,7 +437,6 @@ async fn status_reports_file_base_url_source() {
         .stdout
         .clone();
     let value: serde_json::Value = serde_json::from_slice(&out).unwrap();
-    assert_eq!(value["base_url_source"], "file", "{value}");
-    assert_eq!(value["base_url"], server.uri(), "{value}");
-    assert!(value["domain"].is_null(), "{value}");
+    assert_eq!(value["base_url_source"], "env", "{value}");
+    assert_eq!(value["domain"], "envdomain", "{value}");
 }
