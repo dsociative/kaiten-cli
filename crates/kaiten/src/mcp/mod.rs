@@ -645,31 +645,29 @@ impl KaitenMcp {
                 member_ids.push(me.id);
             }
         }
-        let filter = CardFilter {
-            space_id: p.space_id,
-            board_id: p.board_id,
-            column_id: p.column_id,
-            lane_id: p.lane_id,
-            query: p.query,
-            member_ids,
-            owner_id: p.owner_id,
-            tag: p.tag,
-            type_id: p.type_id,
-            archived: Some(p.archived.unwrap_or(false)),
-            states: p
-                .states
-                .unwrap_or_default()
-                .into_iter()
-                .map(CardStateParam::as_u8)
-                .collect(),
-            updated_after: p.updated_after,
-            created_after: p.created_after,
-            order_by: p.order_by,
-            order_direction: p.order_direction,
-            limit: Some(p.limit.unwrap_or(50)),
-            offset: p.offset,
-            ..Default::default()
-        };
+        let mut filter = CardFilter::default();
+        filter.space_id = p.space_id;
+        filter.board_id = p.board_id;
+        filter.column_id = p.column_id;
+        filter.lane_id = p.lane_id;
+        filter.query = p.query;
+        filter.member_ids = member_ids;
+        filter.owner_id = p.owner_id;
+        filter.tag = p.tag;
+        filter.type_id = p.type_id;
+        filter.archived = Some(p.archived.unwrap_or(false));
+        filter.states = p
+            .states
+            .unwrap_or_default()
+            .into_iter()
+            .map(CardStateParam::as_u8)
+            .collect();
+        filter.updated_after = p.updated_after;
+        filter.created_after = p.created_after;
+        filter.order_by = p.order_by;
+        filter.order_direction = p.order_direction;
+        filter.limit = Some(p.limit.unwrap_or(50));
+        filter.offset = p.offset;
         let cards = try_api!(self.client.cards().list(&filter).await);
         let summaries: Vec<CardSummary> = cards.iter().map(CardSummary::from).collect();
         json_result(&summaries)
@@ -726,16 +724,13 @@ impl KaitenMcp {
         Parameters(p): Parameters<CreateCardParams>,
     ) -> Result<CallToolResult, McpError> {
         let properties = try_args!(coerce_properties(p.properties));
-        let req = CreateCard {
-            board_id: p.board_id,
-            title: p.title,
-            column_id: p.column_id,
-            lane_id: p.lane_id,
-            description: p.description,
-            type_id: p.type_id,
-            asap: p.asap,
-            properties,
-        };
+        let mut req = CreateCard::new(p.board_id, p.title);
+        req.column_id = p.column_id;
+        req.lane_id = p.lane_id;
+        req.description = p.description;
+        req.type_id = p.type_id;
+        req.asap = p.asap;
+        req.properties = properties;
         let card = try_api!(self.client.cards().create(&req).await);
         json_result(&MutationResult::new(&card, &self.web_base))
     }
@@ -748,14 +743,12 @@ impl KaitenMcp {
         Parameters(p): Parameters<UpdateCardParams>,
     ) -> Result<CallToolResult, McpError> {
         let properties = try_args!(coerce_properties(p.properties));
-        let req = UpdateCard {
-            title: p.title,
-            description: p.description,
-            type_id: p.type_id,
-            asap: p.asap,
-            properties,
-            ..Default::default()
-        };
+        let mut req = UpdateCard::default();
+        req.title = p.title;
+        req.description = p.description;
+        req.type_id = p.type_id;
+        req.asap = p.asap;
+        req.properties = properties;
         let card = try_api!(self.client.cards().update(p.card_id, &req).await);
         json_result(&MutationResult::new(&card, &self.web_base))
     }
@@ -767,12 +760,10 @@ impl KaitenMcp {
         &self,
         Parameters(p): Parameters<MoveCardParams>,
     ) -> Result<CallToolResult, McpError> {
-        let req = UpdateCard {
-            column_id: Some(p.column_id),
-            lane_id: p.lane_id,
-            board_id: p.board_id,
-            ..Default::default()
-        };
+        let mut req = UpdateCard::default();
+        req.column_id = Some(p.column_id);
+        req.lane_id = p.lane_id;
+        req.board_id = p.board_id;
         let card = try_api!(self.client.cards().update(p.card_id, &req).await);
         json_result(&MutationResult::new(&card, &self.web_base))
     }
@@ -841,10 +832,8 @@ impl KaitenMcp {
         &self,
         Parameters(p): Parameters<ArchiveCardParams>,
     ) -> Result<CallToolResult, McpError> {
-        let req = UpdateCard {
-            condition: Some(if p.unarchive == Some(true) { 1 } else { 2 }),
-            ..Default::default()
-        };
+        let mut req = UpdateCard::default();
+        req.condition = Some(if p.unarchive == Some(true) { 1 } else { 2 });
         let card = try_api!(self.client.cards().update(p.card_id, &req).await);
         json_result(&MutationResult::new(&card, &self.web_base))
     }
@@ -1111,10 +1100,8 @@ impl KaitenMcp {
         &self,
         Parameters(p): Parameters<ReleaseBlocksParams>,
     ) -> Result<CallToolResult, McpError> {
-        let req = UpdateCard {
-            blocked: Some(false),
-            ..Default::default()
-        };
+        let mut req = UpdateCard::default();
+        req.blocked = Some(false);
         let card = try_api!(self.client.cards().update(p.card_id, &req).await);
         json_result(&MutationResult::new(&card, &self.web_base))
     }
@@ -1289,22 +1276,18 @@ impl KaitenMcp {
                 member_ids.push(me.id);
             }
         }
-        let scope = CardFilter {
-            space_id: p.space_id,
-            board_id: p.board_id,
-            member_ids: member_ids.clone(),
-            limit: Some(limit),
-            ..Default::default()
-        };
+        let mut scope = CardFilter::default();
+        scope.space_id = p.space_id;
+        scope.board_id = p.board_id;
+        scope.member_ids = member_ids.clone();
+        scope.limit = Some(limit);
 
         // A: field edits and moves bump `updated`; ascending order makes the
         // cursor safe when the page overflows (has_more).
-        let filter_updates = CardFilter {
-            updated_after: Some(p.since.clone()),
-            order_by: Some("updated".to_string()),
-            order_direction: Some("asc".to_string()),
-            ..scope.clone()
-        };
+        let mut filter_updates = scope.clone();
+        filter_updates.updated_after = Some(p.since.clone());
+        filter_updates.order_by = Some("updated".to_string());
+        filter_updates.order_direction = Some("asc".to_string());
         let updated = try_api!(self.client.cards().list(&filter_updates).await);
         let has_more = updated.len() >= limit as usize;
 
@@ -1313,11 +1296,9 @@ impl KaitenMcp {
         // lexicographic, valid for the API's uniform UTC ISO 8601 strings.
         let mut commented: Vec<CommentedCard> = Vec::new();
         if p.track_comments != Some(false) {
-            let filter_comments = CardFilter {
-                order_by: Some("comment_last_added_at".to_string()),
-                order_direction: Some("desc".to_string()),
-                ..scope.clone()
-            };
+            let mut filter_comments = scope.clone();
+            filter_comments.order_by = Some("comment_last_added_at".to_string());
+            filter_comments.order_direction = Some("desc".to_string());
             let cards = try_api!(self.client.cards().list(&filter_comments).await);
             commented = cards
                 .iter()
@@ -1338,11 +1319,9 @@ impl KaitenMcp {
         let mine_card_ids = if member_ids.is_empty() {
             None
         } else {
-            let filter_mine = CardFilter {
-                condition: Some(1),
-                limit: Some(100),
-                ..scope
-            };
+            let mut filter_mine = scope;
+            filter_mine.condition = Some(1);
+            filter_mine.limit = Some(100);
             let cards = try_api!(self.client.cards().list(&filter_mine).await);
             Some(cards.iter().map(|c| c.id).collect())
         };

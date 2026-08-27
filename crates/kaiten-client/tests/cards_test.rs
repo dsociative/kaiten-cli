@@ -7,13 +7,11 @@ const CARD_GET_FULL: &str = include_str!("fixtures/card_get_full.json");
 
 #[test]
 fn to_query_skips_none_and_joins_member_ids() {
-    let filter = CardFilter {
-        space_id: Some(810_671),
-        query: Some("bug".to_string()),
-        member_ids: vec![1, 2],
-        archived: Some(false),
-        ..Default::default()
-    };
+    let mut filter = CardFilter::default();
+    filter.space_id = Some(810_671);
+    filter.query = Some("bug".to_string());
+    filter.member_ids = vec![1, 2];
+    filter.archived = Some(false);
     let q = filter.to_query();
     assert_eq!(
         q,
@@ -33,16 +31,14 @@ fn to_query_is_empty_for_default_filter() {
 
 #[test]
 fn to_query_serializes_states_dates_and_ordering() {
-    let filter = CardFilter {
-        states: vec![1, 2],
-        updated_after: Some("2026-07-01T00:00:00Z".to_string()),
-        created_before: Some("2026-07-15T00:00:00Z".to_string()),
-        order_by: Some("updated".to_string()),
-        order_direction: Some("asc".to_string()),
-        additional_card_fields: Some("description".to_string()),
-        offset: Some(100),
-        ..Default::default()
-    };
+    let mut filter = CardFilter::default();
+    filter.states = vec![1, 2];
+    filter.updated_after = Some("2026-07-01T00:00:00Z".to_string());
+    filter.created_before = Some("2026-07-15T00:00:00Z".to_string());
+    filter.order_by = Some("updated".to_string());
+    filter.order_direction = Some("asc".to_string());
+    filter.additional_card_fields = Some("description".to_string());
+    filter.offset = Some(100);
     let q = filter.to_query();
     let has = |k: &str, v: &str| q.contains(&(k.to_string(), v.to_string()));
     assert!(has("states", "1,2"), "comma-joined states: {q:?}");
@@ -69,12 +65,10 @@ async fn list_sends_filter_query_params_and_parses_list_card() {
         .await;
 
     let client = KaitenClient::new(&server.uri(), "test-token").unwrap();
-    let filter = CardFilter {
-        board_id: Some(1_826_109),
-        member_ids: vec![1_068_514, 42],
-        limit: Some(50),
-        ..Default::default()
-    };
+    let mut filter = CardFilter::default();
+    filter.board_id = Some(1_826_109);
+    filter.member_ids = vec![1_068_514, 42];
+    filter.limit = Some(50);
     let cards = client.cards().list(&filter).await.unwrap();
 
     assert_eq!(cards.len(), 5);
@@ -215,11 +209,7 @@ async fn create_sends_board_id_and_title_and_omits_none_fields() {
         .await;
 
     let client = KaitenClient::new(&server.uri(), "test-token").unwrap();
-    let req = CreateCard {
-        board_id: 1_826_109,
-        title: "test card from cli".to_string(),
-        ..Default::default()
-    };
+    let req = CreateCard::new(1_826_109, "test card from cli");
     let card = client.cards().create(&req).await.unwrap();
 
     assert_eq!(card.id, 67_089_469);
@@ -249,13 +239,25 @@ async fn update_with_column_id_is_move_and_omits_other_fields() {
         .await;
 
     let client = KaitenClient::new(&server.uri(), "test-token").unwrap();
-    let req = UpdateCard {
-        column_id: Some(6_308_512),
-        ..Default::default()
-    };
+    let mut req = UpdateCard::default();
+    req.column_id = Some(6_308_512);
     let card = client.cards().update(67_089_469, &req).await.unwrap();
 
     assert_eq!(card.id, 67_089_469);
     assert_eq!(card.asap, Some(true));
     assert_eq!(card.description.as_deref(), Some("test **description**"));
+}
+
+/// `CreateCard::new` takes the two fields Kaiten requires; everything else
+/// stays unset and is left out of the request body.
+#[test]
+fn create_card_new_sets_only_the_required_fields() {
+    let req = CreateCard::new(1_826_109, "test card from cli");
+    assert_eq!(
+        serde_json::to_value(&req).unwrap(),
+        serde_json::json!({ "board_id": 1_826_109, "title": "test card from cli" })
+    );
+    let mut req = req;
+    req.asap = Some(true);
+    assert_eq!(serde_json::to_value(&req).unwrap()["asap"], true);
 }

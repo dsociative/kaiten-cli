@@ -6,6 +6,7 @@ use crate::models::Card;
 ///
 /// The server silently caps `limit` at 100 — page with `offset` for more.
 #[derive(Debug, Default, Clone)]
+#[non_exhaustive]
 pub struct CardFilter {
     pub space_id: Option<u64>,
     pub board_id: Option<u64>,
@@ -95,7 +96,8 @@ impl CardFilter {
 
 /// Body for POST /cards. All fields except `board_id`/`title` are optional
 /// and omitted from JSON when `None`.
-#[derive(Debug, Default, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize)]
+#[non_exhaustive]
 pub struct CreateCard {
     pub board_id: u64,
     pub title: String,
@@ -115,9 +117,28 @@ pub struct CreateCard {
     pub properties: Option<serde_json::Value>,
 }
 
+impl CreateCard {
+    /// A request with the two fields Kaiten requires; set the optional ones
+    /// on the returned value (`req.description = Some(..)`).
+    #[must_use]
+    pub fn new(board_id: u64, title: impl Into<String>) -> Self {
+        Self {
+            board_id,
+            title: title.into(),
+            column_id: None,
+            lane_id: None,
+            description: None,
+            type_id: None,
+            asap: None,
+            properties: None,
+        }
+    }
+}
+
 /// Body for PATCH /cards/{id}. Move = update with `column_id`/`lane_id`/`board_id`;
 /// archive = update with `condition = 2`. `None` fields are omitted from JSON.
 #[derive(Debug, Default, Clone, serde::Serialize)]
+#[non_exhaustive]
 pub struct UpdateCard {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
