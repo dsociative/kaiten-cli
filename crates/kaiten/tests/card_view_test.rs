@@ -164,10 +164,10 @@ async fn mock_comments(server: &MockServer, expect: u64) {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn card_view_include_external_links_makes_second_request_and_prints_section() {
+async fn card_view_include_external_links_is_accepted_and_makes_no_request() {
     let server = MockServer::start().await;
     mock_card(&server).await;
-    mock_external_links(&server, 1).await;
+    mock_external_links(&server, 0).await;
     mock_comments(&server, 0).await;
     let tmp = tempfile::tempdir().unwrap();
 
@@ -176,9 +176,8 @@ async fn card_view_include_external_links_makes_second_request_and_prints_sectio
         .assert()
         .success()
         .stdout(predicate::str::contains("External links:"))
-        .stdout(predicate::str::contains("21177131"))
-        .stdout(predicate::str::contains("https://example.com/spike"))
-        .stdout(predicate::str::contains("Source"))
+        .stdout(predicate::str::contains("21181168"))
+        .stdout(predicate::str::contains("https://example.com/fixture-link"))
         .stdout(predicate::str::contains("Comments:").not());
 }
 
@@ -186,7 +185,7 @@ async fn card_view_include_external_links_makes_second_request_and_prints_sectio
 async fn card_view_include_both_sections_comma_separated() {
     let server = MockServer::start().await;
     mock_card(&server).await;
-    mock_external_links(&server, 1).await;
+    mock_external_links(&server, 0).await;
     mock_comments(&server, 1).await;
     let tmp = tempfile::tempdir().unwrap();
 
@@ -280,7 +279,7 @@ async fn card_view_comments_flag_and_include_comments_fetch_once() {
 async fn card_view_include_can_be_repeated() {
     let server = MockServer::start().await;
     mock_card(&server).await;
-    mock_external_links(&server, 1).await;
+    mock_external_links(&server, 0).await;
     mock_comments(&server, 1).await;
     let tmp = tempfile::tempdir().unwrap();
 
@@ -304,7 +303,7 @@ async fn card_view_include_can_be_repeated() {
 async fn card_view_json_include_external_links_adds_the_key() {
     let server = MockServer::start().await;
     mock_card(&server).await;
-    mock_external_links(&server, 1).await;
+    mock_external_links(&server, 0).await;
     let tmp = tempfile::tempdir().unwrap();
 
     let out = kaiten(tmp.path(), &server.uri())
@@ -323,7 +322,7 @@ async fn card_view_json_include_external_links_adds_the_key() {
         .clone();
     let value: serde_json::Value = serde_json::from_slice(&out).unwrap();
     assert_eq!(value["card"]["id"], 67_089_469, "{value}");
-    assert_eq!(value["external_links"][0]["id"], 21_177_131, "{value}");
+    assert_eq!(value["external_links"][0]["id"], 21_181_168, "{value}");
     assert!(value.get("comments").is_none(), "{value}");
 }
 
@@ -340,4 +339,37 @@ async fn card_view_include_rejects_an_unknown_section() {
         .stderr(predicate::str::contains("external_links"))
         .stderr(predicate::str::contains("comments"));
     assert!(server.received_requests().await.unwrap().is_empty());
+}
+
+/// The card response carries its links; `card view` shows them without any
+/// extra request, and `--json` has them inside the card object.
+#[tokio::test(flavor = "multi_thread")]
+async fn card_view_prints_external_links_from_the_card_without_a_request() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/cards/67089469"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(CARD, "application/json"))
+        .expect(2)
+        .mount(&server)
+        .await;
+    mock_external_links(&server, 0).await;
+    let tmp = tempfile::tempdir().unwrap();
+
+    kaiten(tmp.path(), &server.uri())
+        .args(["card", "view", "67089469"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("External links:"))
+        .stdout(predicate::str::contains("https://example.com/fixture-link"))
+        .stdout(predicate::str::contains("fixture link"));
+
+    let out = kaiten(tmp.path(), &server.uri())
+        .args(["--json", "card", "view", "67089469"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let value: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(value["external_links"][0]["id"], 21_181_168, "{value}");
 }

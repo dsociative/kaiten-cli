@@ -262,7 +262,7 @@ pub struct CardDetail {
     pub blockers: Vec<BlockerView>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub files: Vec<FileView>,
-    /// Only with `get_card` `include: ["external_links"]` (a second request).
+    /// Present when the card has external links (they come with the card).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub external_links: Option<Vec<ExternalLinkView>>,
     /// Only with `get_card` `include: ["comments"]` (a second request).
@@ -289,7 +289,12 @@ impl From<&Card> for CardDetail {
             parents: card.parents.iter().map(LinkedCardView::from).collect(),
             blockers: card.blockers.iter().map(BlockerView::from).collect(),
             files: card.files.iter().map(FileView::from).collect(),
-            external_links: None,
+            external_links: (!card.external_links.is_empty()).then(|| {
+                card.external_links
+                    .iter()
+                    .map(ExternalLinkView::from)
+                    .collect()
+            }),
             comments: None,
         }
     }

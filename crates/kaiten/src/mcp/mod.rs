@@ -175,9 +175,8 @@ pub struct ListCardsParams {
 pub struct GetCardParams {
     /// Card id
     pub card_id: u64,
-    /// Extra sections to fetch with the card, one more request each:
-    /// "external_links" (Links (common links)), "comments". Omit for the
-    /// plain card.
+    /// Extra sections: "comments" (one more request). External links come
+    /// with the card itself; "external_links" is accepted for compatibility.
     pub include: Option<Vec<IncludeSection>>,
 }
 
@@ -674,7 +673,7 @@ impl KaitenMcp {
     }
 
     #[tool(
-        description = "Get a full card by id: description, members, tags, checklists, custom properties, linked cards (children/parents), blockers and attached files. For the raw API JSON use the CLI (kaiten card view --json). Pass include: [\"external_links\", \"comments\"] to fetch those sections too (one extra request each)."
+        description = "Get a full card by id: description, members, tags, checklists, custom properties, linked cards (children/parents), blockers and attached files. For the raw API JSON use the CLI (kaiten card view --json). External links come with the card; pass include: [\"comments\"] to fetch comments too (one extra request)."
     )]
     async fn get_card(
         &self,
@@ -683,10 +682,8 @@ impl KaitenMcp {
         let card = try_api!(self.client.cards().get(p.card_id).await);
         let mut detail = CardDetail::from(&card);
         let include = p.include.unwrap_or_default();
-        if include.contains(&IncludeSection::ExternalLinks) {
-            let links = try_api!(self.client.external_links().list(p.card_id).await);
-            detail.external_links = Some(links.iter().map(ExternalLinkView::from).collect());
-        }
+        // IncludeSection::ExternalLinks is accepted for compatibility: the
+        // links are already part of the card response.
         if include.contains(&IncludeSection::Comments) {
             let comments = try_api!(self.client.comments().list(p.card_id).await);
             detail.comments = Some(comments.iter().map(CommentView::from).collect());
@@ -2787,10 +2784,11 @@ mod tests {
         );
     }
 
-    /// Without `include` get_card stays a single request and its shape is
-    /// untouched; `include` opts into extra requests and extra keys.
+    /// The card response carries its external links: `get_card` returns them
+    /// without any extra request, with or without `include`; `comments` is
+    /// still an opt-in second request.
     #[tokio::test]
-    async fn get_card_include_external_links_and_comments_makes_extra_requests() {
+    async fn get_card_returns_external_links_from_the_card_and_fetches_comments_on_include() {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/cards/67089469"))
@@ -2800,7 +2798,7 @@ mod tests {
             .expect(3)
             .mount(&server)
             .await;
-        mount_external_links(&server, 2).await;
+        mount_external_links(&server, 0).await;
         Mock::given(method("GET"))
             .and(path("/cards/67089469/comments"))
             .respond_with(ResponseTemplate::new(200).set_body_raw(
@@ -2820,7 +2818,10 @@ mod tests {
             .await
             .unwrap();
         let plain: serde_json::Value = serde_json::from_str(&tool_text(&plain)).unwrap();
-        assert!(plain.get("external_links").is_none(), "{plain}");
+        assert_eq!(
+            plain["external_links"][0]["url"], "https://example.com/fixture-link",
+            "{plain}"
+        );
         assert!(plain.get("comments").is_none(), "{plain}");
 
         let links_only = mcp
@@ -2831,10 +2832,7 @@ mod tests {
             .await
             .unwrap();
         let links_only: serde_json::Value = serde_json::from_str(&tool_text(&links_only)).unwrap();
-        assert_eq!(
-            links_only["external_links"][0]["url"],
-            "https://example.com/spike"
-        );
+        assert_eq!(links_only["external_links"][0]["id"], 21_181_168);
         assert!(links_only.get("comments").is_none(), "{links_only}");
 
         let both = mcp
@@ -2848,7 +2846,7 @@ mod tests {
             .await
             .unwrap();
         let both: serde_json::Value = serde_json::from_str(&tool_text(&both)).unwrap();
-        assert_eq!(both["external_links"].as_array().unwrap().len(), 2);
+        assert_eq!(both["external_links"].as_array().unwrap().len(), 1);
         assert_eq!(both["comments"][0]["text"], "hi");
         assert_eq!(both["id"], 67_089_469, "{both}");
     }

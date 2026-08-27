@@ -419,28 +419,28 @@ async fn run_view(
     if comments_flag {
         eprintln!("warning: --comments is deprecated, use --include comments");
     }
-    let with_links = include.contains(&ViewSection::ExternalLinks);
+    // External links come with the card itself; the value is accepted for
+    // compatibility and only affects the `--json` envelope below.
+    let links_requested = include.contains(&ViewSection::ExternalLinks);
     let with_comments = comments_flag || include.contains(&ViewSection::Comments);
     let card_id = parse_card_ref(card)?;
     let card = client.cards().get(card_id).await?;
-    let links = if with_links {
-        Some(client.external_links().list(card_id).await?)
-    } else {
-        None
-    };
     let comments = if with_comments {
         Some(client.comments().list(card_id).await?)
     } else {
         None
     };
     if json {
-        if links.is_none() && comments.is_none() {
+        if !links_requested && comments.is_none() {
             return output::print_json(&card);
         }
         let mut doc = serde_json::Map::new();
         doc.insert("card".into(), serde_json::json!(card));
-        if let Some(links) = &links {
-            doc.insert("external_links".into(), serde_json::json!(links));
+        if links_requested {
+            doc.insert(
+                "external_links".into(),
+                serde_json::json!(card.external_links),
+            );
         }
         if let Some(comments) = &comments {
             doc.insert("comments".into(), serde_json::json!(comments));
@@ -448,8 +448,8 @@ async fn run_view(
         return output::print_json(&doc);
     }
     print_card_details(&card);
-    if let Some(links) = &links {
-        print_links_section(links);
+    if !card.external_links.is_empty() {
+        print_links_section(&card.external_links);
     }
     if let Some(comments) = &comments {
         print_comments_section(comments);

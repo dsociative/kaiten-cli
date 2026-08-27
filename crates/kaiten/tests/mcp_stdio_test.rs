@@ -562,7 +562,7 @@ async fn mcp_stdio_get_card_include_external_links_keeps_legacy_shape() {
             include_str!("fixtures/external_links_list.json"),
             "application/json",
         ))
-        .expect(1)
+        .expect(0)
         .mount(&server)
         .await;
 
@@ -578,7 +578,7 @@ async fn mcp_stdio_get_card_include_external_links_keeps_legacy_shape() {
     assert_legacy_shape(&card["result"], "tools/call (get_card include)");
     let detail: serde_json::Value = serde_json::from_str(tool_text(&card)).unwrap();
     assert_eq!(detail["id"], 67_089_469, "{detail}");
-    assert_eq!(detail["external_links"][0]["id"], 21_177_131, "{detail}");
+    assert_eq!(detail["external_links"][0]["id"], 21_181_168, "{detail}");
 
     let bad = mcp.call_tool(
         4,
