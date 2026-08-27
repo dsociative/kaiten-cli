@@ -381,5 +381,160 @@ async fn download_newer_storage_metadata_without_url_is_an_error_without_a_secon
     let client = KaitenClient::new(&format!("{}/api/latest", api.uri()), "test-token").unwrap();
     let card: kaiten_client::Card = serde_json::from_str(CARD_GET_FILES_TYPE11).unwrap();
     let err = client.files().download(&card.files[0]).await.unwrap_err();
+    assert!(
+        matches!(&err, kaiten_client::KaitenError::Io(e) if e.kind() == std::io::ErrorKind::InvalidInput),
+        "{err:?}"
+    );
     assert!(err.to_string().contains("download url"), "{err}");
+}
+
+/// A redirecting instance hands the bytes over as-is: a JSON *attachment*
+/// reached through a 302 must never be mistaken for storage metadata.
+#[tokio::test]
+async fn download_json_attachment_behind_a_redirect_is_returned_verbatim() {
+    let api = MockServer::start().await;
+    let storage = MockServer::start().await;
+    let attachment = format!(r#"{{"url": "{}/elsewhere"}}"#, storage.uri());
+    Mock::given(method("GET"))
+        .and(path("/api/v1/cards/CU/files/FU"))
+        .and(header("Authorization", "Bearer test-token"))
+        .respond_with(
+            ResponseTemplate::new(302)
+                .insert_header("Location", format!("{}/data.json", storage.uri()).as_str()),
+        )
+        .expect(1)
+        .mount(&api)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/data.json"))
+        .and(NoAuthHeader)
+        .respond_with(
+            ResponseTemplate::new(200).set_body_raw(attachment.clone(), "application/json"),
+        )
+        .expect(1)
+        .mount(&storage)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/elsewhere"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(b"wrong".to_vec()))
+        .expect(0)
+        .mount(&storage)
+        .await;
+
+    let client = KaitenClient::new(&format!("{}/api/latest", api.uri()), "test-token").unwrap();
+    let file =
+        card_file(r#"{"id": "FU", "name": "data.json", "url": "/api/v1/cards/CU/files/FU"}"#);
+    assert_eq!(
+        client.files().download(&file).await.unwrap(),
+        attachment.as_bytes()
+    );
+}
+
+#[tokio::test]
+async fn download_classic_json_attachment_is_returned_verbatim() {
+    let storage = MockServer::start().await;
+    let attachment = r#"{"url": "https://example.invalid/not-followed"}"#;
+    Mock::given(method("GET"))
+        .and(path("/a.json"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(attachment, "application/json"))
+        .expect(1)
+        .mount(&storage)
+        .await;
+
+    let client = KaitenClient::new("http://127.0.0.1:9", "test-token").unwrap();
+    let file = card_file(&format!(
+        r#"{{"id": 1, "name": "a.json", "url": "{}/a.json"}}"#,
+        storage.uri()
+    ));
+    assert_eq!(
+        client.files().download(&file).await.unwrap(),
+        attachment.as_bytes()
+    );
+}
+
+#[tokio::test]
+async fn download_newer_storage_recognises_the_media_type_case_insensitively() {
+    let api = MockServer::start().await;
+    let storage = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v1/cards/CU/files/FU"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            format!(r#"{{"id": "FU", "url": "{}/signed"}}"#, storage.uri()),
+            "Application/JSON; charset=UTF-8",
+        ))
+        .expect(1)
+        .mount(&api)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/signed"))
+        .and(NoAuthHeader)
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(b"real".to_vec()))
+        .expect(1)
+        .mount(&storage)
+        .await;
+
+    let client = KaitenClient::new(&format!("{}/api/latest", api.uri()), "test-token").unwrap();
+    let file = card_file(r#"{"id": "FU", "name": "r", "url": "/api/v1/cards/CU/files/FU"}"#);
+    assert_eq!(client.files().download(&file).await.unwrap(), b"real");
+}
+
+#[tokio::test]
+async fn download_newer_storage_invalid_json_metadata_is_a_decode_error() {
+    let api = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v1/cards/CU/files/FU"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_raw("<html>login</html>", "application/json"),
+        )
+        .mount(&api)
+        .await;
+
+    let client = KaitenClient::new(&format!("{}/api/latest", api.uri()), "test-token").unwrap();
+    let file = card_file(r#"{"id": "FU", "name": "r", "url": "/api/v1/cards/CU/files/FU"}"#);
+    let err = client.files().download(&file).await.unwrap_err();
+    assert!(
+        matches!(err, kaiten_client::KaitenError::Decode { .. }),
+        "{err:?}"
+    );
+}
+
+/// The signed link lives for seconds; when storage refuses it the error must
+/// say so and name the file, not just echo an S3 XML page.
+#[tokio::test]
+async fn download_newer_storage_refused_signed_link_names_the_file_and_storage() {
+    let api = MockServer::start().await;
+    let storage = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v1/cards/CU/files/FU"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            format!(
+                r#"{{"id": "FU", "name": "report.html", "url": "{}/signed"}}"#,
+                storage.uri()
+            ),
+            "application/json",
+        ))
+        .mount(&api)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/signed"))
+        .respond_with(ResponseTemplate::new(403).set_body_raw(
+            "<?xml version=\"1.0\"?><Error><Code>AccessDenied</Code><Message>Request has expired</Message></Error>",
+            "application/xml",
+        ))
+        .mount(&storage)
+        .await;
+
+    let client = KaitenClient::new(&format!("{}/api/latest", api.uri()), "test-token").unwrap();
+    let file =
+        card_file(r#"{"id": "FU", "name": "report.html", "url": "/api/v1/cards/CU/files/FU"}"#);
+    let err = client.files().download(&file).await.unwrap_err();
+    assert!(
+        matches!(err, kaiten_client::KaitenError::Api { status: 403, .. }),
+        "{err:?}"
+    );
+    let text = err.to_string();
+    assert!(
+        text.contains("storage refused") && text.contains("report.html"),
+        "{text}"
+    );
 }

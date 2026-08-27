@@ -41,15 +41,18 @@ impl Files<'_> {
             ))
         })?;
         let url = resolve_file_url(self.client.base_url(), raw)?;
-        let (content_type, bytes) = self.client.get_bytes(&url).await?;
-        let is_metadata = url.origin() == self.client.base_url().origin()
-            && content_type
-                .as_deref()
-                .is_some_and(|ct| ct.starts_with("application/json"));
+        let fetched = self.client.get_bytes(&url).await?;
+        // Metadata comes only from the API itself: the answer must be JSON and
+        // must have been served by the very url we asked for. A redirect means
+        // the API handed us over to storage, and whatever comes back — even a
+        // JSON attachment — is the file.
+        let is_metadata = fetched.url == url
+            && url.origin() == self.client.base_url().origin()
+            && is_json(fetched.content_type.as_deref());
         if !is_metadata {
-            return Ok(bytes);
+            return Ok(fetched.bytes);
         }
-        let text = String::from_utf8(bytes).map_err(|e| {
+        let text = String::from_utf8(fetched.bytes).map_err(|e| {
             invalid_input(format!(
                 "file metadata for `{}` is not UTF-8: {e}",
                 file.name
@@ -65,8 +68,24 @@ impl Files<'_> {
         })?;
         let signed = url::Url::parse(&signed)
             .map_err(|e| invalid_input(format!("storage url `{signed}` is not valid: {e}")))?;
-        let (_, bytes) = self.client.get_bytes(&signed).await?;
-        Ok(bytes)
+        // The signed link is valid for seconds; it is fetched right away, and
+        // the API-side 429 retries all happen before it is minted.
+        match self.client.get_bytes(&signed).await {
+            Ok(fetched) => Ok(fetched.bytes),
+            Err(KaitenError::Api {
+                status,
+                message,
+                body,
+            }) => Err(KaitenError::Api {
+                status,
+                message: format!(
+                    "storage refused the signed link for `{}` (it is valid only for seconds): {message}",
+                    file.name
+                ),
+                body,
+            }),
+            Err(other) => Err(other),
+        }
     }
 
     /// [`Files::download`] straight into `path` (created or truncated;
@@ -112,8 +131,14 @@ impl Files<'_> {
 /// which only the signed storage `url` matters here.
 #[derive(serde::Deserialize)]
 struct FileLocation {
-    #[serde(default)]
     url: Option<String>,
+}
+
+/// Media types are case-insensitive; parameters (`; charset=…`) are ignored.
+fn is_json(content_type: Option<&str>) -> bool {
+    content_type
+        .and_then(|ct| ct.split(';').next())
+        .is_some_and(|media| media.trim().eq_ignore_ascii_case("application/json"))
 }
 
 /// Absolute URLs pass through; a path is resolved against the API **origin**

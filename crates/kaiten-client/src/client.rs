@@ -252,8 +252,8 @@ impl KaitenClient {
         }
     }
 
-    /// GET `url` and return the content type and body bytes (attachment
-    /// downloads).
+    /// GET `url` and return where the answer finally came from (after
+    /// redirects), its content type and body bytes (attachment downloads).
     ///
     /// The bearer token is sent only when `url` is on the API origin — never
     /// to the public file host, nor to a storage host reached through a
@@ -262,7 +262,7 @@ impl KaitenClient {
     /// downgrade would keep it, which only Kaiten itself could trigger).
     /// Retry and tracing mirror `send_with_retry`; the body is binary and
     /// never traced; errors go through `download_error`.
-    pub(crate) async fn get_bytes(&self, url: &url::Url) -> Result<(Option<String>, Vec<u8>)> {
+    pub(crate) async fn get_bytes(&self, url: &url::Url) -> Result<Fetched> {
         let with_auth = url.origin() == self.base_url.origin();
         let mut retries = 0u32;
         loop {
@@ -306,7 +306,12 @@ impl KaitenClient {
                 .get(reqwest::header::CONTENT_TYPE)
                 .and_then(|v| v.to_str().ok())
                 .map(str::to_owned);
-            return Ok((content_type, resp.bytes().await?.to_vec()));
+            let final_url = resp.url().clone();
+            return Ok(Fetched {
+                url: final_url,
+                content_type,
+                bytes: resp.bytes().await?.to_vec(),
+            });
         }
     }
 
@@ -340,6 +345,14 @@ impl KaitenClient {
         self.send_with_retry(method, path, None, None).await?;
         Ok(())
     }
+}
+
+/// Result of [`KaitenClient::get_bytes`].
+pub(crate) struct Fetched {
+    /// The URL that answered — differs from the requested one after a redirect.
+    pub(crate) url: url::Url,
+    pub(crate) content_type: Option<String>,
+    pub(crate) bytes: Vec<u8>,
 }
 
 /// `X-RateLimit-Reset` as sent (missing/garbage → `None`).
