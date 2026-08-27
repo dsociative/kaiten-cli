@@ -1139,9 +1139,17 @@ impl KaitenMcp {
     }
 }
 
-// rmcp 2.2.0's `#[tool_handler]` default router expression is `Self::tool_router()`,
-// which would rebuild a fresh router per request and leave the `tool_router` instance
-// field dead; route through the field explicitly so it's the single source of truth.
+// clippy 1.98+ `unused_async_trait_impl` fires on the `async fn list_tools` that
+// `#[tool_handler]` generates (its body has no `.await`). Hand-writing `list_tools`
+// just to drop `async` would mean re-implementing the macro's output and tracking
+// rmcp's evolving defaults, so the lint is allowed at this one site instead.
+#[allow(
+    clippy::unused_async_trait_impl,
+    reason = "rmcp macro-generated `list_tools`"
+)]
+// rmcp's `#[tool_handler]` default router expression, `Self::tool_router()`, would
+// rebuild a fresh router per request and leave the `tool_router` instance field
+// dead; route through the field explicitly so it's the single source of truth.
 #[tool_handler(router = self.tool_router.clone())]
 impl ServerHandler for KaitenMcp {
     fn get_info(&self) -> ServerInfo {

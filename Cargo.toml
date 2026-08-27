@@ -41,7 +41,7 @@ comfy-table = "7"
 toml = "1.1"
 dirs = "6"
 rpassword = "7"
-rmcp = { version = "2", features = ["server", "macros", "transport-io"] }
+rmcp = { version = "3", features = ["server", "macros", "transport-io"] }
 schemars = "1"
 wiremock = "0.6"
 assert_cmd = "2"
