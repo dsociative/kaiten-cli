@@ -172,7 +172,8 @@ pub struct Blocker {
 /// `id`, sends `size` as a string and a host-root-relative `url` under
 /// `/api/v1` that requires the API token. Both parse into this struct: `id`
 /// is `0` when the API identifies the file only by a UUID — address such
-/// files through [`FileRef`], which recovers the UUID from `url`. Parsing is
+/// files through [`FileRef`], built from `uid` (or, failing that, from the
+/// UUID in `url`). Parsing is
 /// tolerant only for self-describing formats such as JSON.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(from = "RawCardFile")]
