@@ -1,6 +1,6 @@
 use std::io::Write;
 
-use kaiten_client::KaitenClient;
+use kaiten_client::{KaitenClient, KaitenError};
 
 use crate::cli::AuthCmd;
 use crate::config::{self, FileConfig, TokenSource};
@@ -9,20 +9,44 @@ use crate::output;
 
 pub async fn run(cmd: AuthCmd, json: bool) -> Result<(), CliError> {
     match cmd {
-        AuthCmd::Login { domain, token } => login(domain, token).await,
+        AuthCmd::Login {
+            domain,
+            base_url,
+            token,
+        } => login(domain, base_url, token).await,
         AuthCmd::Status => status(json).await,
     }
 }
 
-async fn login(domain: Option<String>, token: Option<String>) -> Result<(), CliError> {
-    let domain = match domain {
-        Some(domain) => domain,
-        None => prompt_line("Kaiten domain (as in https://<domain>.kaiten.ru): ")?,
+/// What `auth login` authenticates against: a Kaiten cloud company by domain,
+/// or an on-premise installation by its full API base URL (issue #13).
+enum LoginTarget {
+    Domain(String),
+    BaseUrl(String),
+}
+
+async fn login(
+    domain: Option<String>,
+    base_url: Option<String>,
+    token: Option<String>,
+) -> Result<(), CliError> {
+    let target = match (domain, base_url) {
+        (None, Some(url)) => LoginTarget::BaseUrl(validate_base_url(&url)?),
+        (Some(_), Some(_)) => {
+            unreachable!("clap group \"target\" makes --domain and --base-url exclusive")
+        }
+        (domain, None) => {
+            let domain = match domain {
+                Some(domain) => domain,
+                None => prompt_line("Kaiten domain (as in https://<domain>.kaiten.ru): ")?,
+            };
+            let domain = domain.trim().to_string();
+            if domain.is_empty() {
+                return Err(CliError::InvalidArg("domain must not be empty".into()));
+            }
+            LoginTarget::Domain(domain)
+        }
     };
-    let domain = domain.trim().to_string();
-    if domain.is_empty() {
-        return Err(CliError::InvalidArg("domain must not be empty".into()));
-    }
     let token = match token {
         Some(token) => token,
         None => rpassword::prompt_password("API token: ")?,
@@ -30,22 +54,100 @@ async fn login(domain: Option<String>, token: Option<String>) -> Result<(), CliE
     if token.is_empty() {
         return Err(CliError::InvalidArg("token must not be empty".into()));
     }
-    // KAITEN_BASE_URL is honored so login can be pointed at a mock server in tests.
-    let base_url = std::env::var("KAITEN_BASE_URL")
-        .unwrap_or_else(|_| format!("https://{domain}.kaiten.ru/api/latest"));
-    let client = KaitenClient::new(&base_url, &token)?;
-    let user = client.users().current().await?;
+    // Precedence: --base-url, then KAITEN_BASE_URL (so login can be pointed at
+    // a mock server in tests), then the cloud URL derived from the domain.
+    let api_base = match &target {
+        LoginTarget::BaseUrl(url) => url.clone(),
+        LoginTarget::Domain(domain) => {
+            std::env::var("KAITEN_BASE_URL").unwrap_or_else(|_| config::domain_base_url(domain))
+        }
+    };
+    let client = KaitenClient::new(&api_base, &token)?;
+    let user = client
+        .users()
+        .current()
+        .await
+        .map_err(|err| login_error(&target, &api_base, err))?;
 
     let mut file = FileConfig::load()?;
-    file.domain = Some(domain.clone());
+    // Keep exactly one of domain/base_url so `auth status` never shows a stale pair.
+    match &target {
+        LoginTarget::BaseUrl(url) => {
+            file.base_url = Some(url.clone());
+            file.domain = None;
+        }
+        LoginTarget::Domain(domain) => {
+            file.domain = Some(domain.clone());
+            file.base_url = None;
+        }
+    }
     file.token = Some(token);
     file.save()?;
 
+    let target_label = match &target {
+        LoginTarget::BaseUrl(url) => url.clone(),
+        LoginTarget::Domain(domain) => format!("{domain}.kaiten.ru"),
+    };
     println!(
-        "Logged in to {domain}.kaiten.ru as {}",
+        "Logged in to {target_label} as {}",
         output::user_label(&user)
     );
     Ok(())
+}
+
+/// `--base-url` must be an absolute http(s) URL without query, fragment or
+/// credentials (the bearer token is the only authentication; userinfo would
+/// only end up in config.toml); the trailing slash is dropped so the client
+/// can append `/users/current` and friends.
+fn validate_base_url(raw: &str) -> Result<String, CliError> {
+    const EXPECTED: &str = "expected something like https://host/api/latest";
+    let url = raw.trim().trim_end_matches('/');
+    if url.is_empty() {
+        return Err(CliError::InvalidArg(format!(
+            "--base-url is empty ({EXPECTED})"
+        )));
+    }
+    // The value is never echoed: a scheme-less `user:secret@host` parses as a
+    // `user:` scheme and would slip past the credentials check below.
+    let parsed = url::Url::parse(url)
+        .map_err(|e| CliError::InvalidArg(format!("--base-url is not a URL: {e} ({EXPECTED})")))?;
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        // deliberately not echoing the value: it may contain a password
+        return Err(CliError::InvalidArg(format!(
+            "--base-url must not contain credentials ({EXPECTED})"
+        )));
+    }
+    if !parsed.has_host()
+        || !["http", "https"].contains(&parsed.scheme())
+        || parsed.query().is_some()
+        || parsed.fragment().is_some()
+    {
+        return Err(CliError::InvalidArg(format!(
+            "--base-url must be an http(s) URL without query or fragment ({EXPECTED})"
+        )));
+    }
+    Ok(url.to_string())
+}
+
+/// On an explicit base URL, a 404 from `/users/current` — or an answer that
+/// is not JSON at all, which is what Kaiten's web root returns for any path —
+/// almost always means the API prefix is missing. Lead with that; real
+/// servers send whole HTML pages as the error body. Valid JSON that merely
+/// does not fit the `User` model (`is_data`) is a different problem and is
+/// reported as the decode error it is.
+fn login_error(target: &LoginTarget, api_base: &str, err: KaitenError) -> CliError {
+    const HINT: &str = "base URL must include the API prefix, e.g. https://host/api/latest";
+    match (target, &err) {
+        (LoginTarget::BaseUrl(_), KaitenError::Api { status: 404, .. }) => CliError::InvalidArg(
+            format!("{HINT} (GET {api_base}/users/current returned HTTP 404)"),
+        ),
+        (LoginTarget::BaseUrl(_), KaitenError::Decode { source, .. }) if !source.is_data() => {
+            CliError::InvalidArg(format!(
+                "{HINT} (GET {api_base}/users/current returned something that is not JSON: {err})"
+            ))
+        }
+        _ => CliError::Api(err),
+    }
 }
 
 async fn status(json: bool) -> Result<(), CliError> {
@@ -62,12 +164,14 @@ async fn status(json: bool) -> Result<(), CliError> {
         return output::print_json(&serde_json::json!({
             "domain": domain,
             "base_url": resolved.base_url,
+            "base_url_source": resolved.base_url_source.as_str(),
             "token_source": source,
             "user": user,
         }));
     }
     println!("domain:       {}", domain.as_deref().unwrap_or("-"));
     println!("base_url:     {}", resolved.base_url);
+    println!("url source:   {}", resolved.base_url_source.as_str());
     println!("token source: {source}");
     println!(
         "logged in as: {} (id {})",
