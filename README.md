@@ -104,6 +104,8 @@ kaiten card tag add 67089469 backend
 
 kaiten card link 67089469 --blocked-by 67089500 --reason "waiting for API"
 kaiten card file add 67089469 ./screenshot.png    # uploads get a PUBLIC url
+kaiten card file list 67089469
+kaiten card file get 67089469 61256602 -o ./downloads/   # id or uid; into an existing dir or a file path; --force to overwrite
 kaiten card time add 67089469 --minutes 30 --date 2026-07-16
 kaiten card list --mine --state in-progress --sort updated --desc
 
@@ -131,7 +133,7 @@ kaiten completion fish > ~/.config/fish/completions/kaiten.fish
 
 ## MCP server
 
-The same binary is an MCP server (stdio transport, 35 tools mirroring the CLI,
+The same binary is an MCP server (stdio transport, 36 tools mirroring the CLI,
 including compact card projections and a cursor-based `poll_updates` for
 event-like agent workflows).
 
@@ -180,7 +182,7 @@ by area (✅ covered, ◐ partial, — not covered):
 | Card types | ◐ list | ◐ list |
 | Users list (id lookup) | ✅ | ✅ |
 | Card links: children / parents / blockers | ✅ `card link/unlink/unblock` | ✅ `link_cards` etc. |
-| Files: attach / detach | ✅ (uploads get a PUBLIC url!) | ✅ |
+| Files: attach / detach / list / download | ✅ (uploads get a PUBLIC url!) | ✅ (`download_file` saves locally) |
 | External links | — | — |
 | Custom properties: reference + set values | ✅ `property list/values`, `--properties-json` | ✅ two tools + `properties` (a JSON object — a wrong shape is rejected before the API call; mutations echo the resulting `properties`) |
 | Time logs | ✅ `card time add/list` | ✅ |

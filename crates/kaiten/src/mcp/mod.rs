@@ -1,13 +1,15 @@
 mod projections;
 
+use std::path::Path;
 use std::sync::Arc;
 
-use kaiten_client::{CardFilter, CreateCard, KaitenClient, KaitenError, UpdateCard};
+use kaiten_client::{CardFilter, CreateCard, FileRef, KaitenClient, KaitenError, UpdateCard};
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{CallToolResult, ContentBlock, ServerCapabilities, ServerInfo};
 use rmcp::{ErrorData as McpError, ServerHandler, tool, tool_handler, tool_router};
 
+use crate::download;
 use crate::error::CliError;
 use crate::properties;
 use projections::{
@@ -21,6 +23,9 @@ pub struct KaitenMcp {
     /// Web origin for short card links, e.g. "https://mycompany.kaiten.ru"
     /// (the API base URL without the `/api/latest` path).
     web_base: String,
+    /// Where `download_file` saves when no `save_path` is given: a per-user
+    /// cache directory, `<card_id>/<file ref>/<name>` underneath.
+    download_dir: std::path::PathBuf,
     tool_router: ToolRouter<Self>,
 }
 
@@ -472,6 +477,21 @@ pub struct DetachFileParams {
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
+pub struct DownloadFileParams {
+    /// Card id
+    pub card_id: u64,
+    /// File id (numeric) or uid (UUID), as listed by get_card files
+    pub file_id: String,
+    /// Target file path, or an existing directory (the original name inside
+    /// it). Default: <user cache dir>/kaiten/files/<card_id>/<file ref>/<name>
+    pub save_path: Option<String>,
+    /// Overwrite an existing file at save_path (default false: the call fails
+    /// instead); the default location is always refreshed
+    pub overwrite: Option<bool>,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct ArchiveCardParams {
     /// Card id
     pub card_id: u64,
@@ -511,6 +531,10 @@ impl KaitenMcp {
         Self {
             client,
             web_base,
+            download_dir: dirs::cache_dir()
+                .unwrap_or_else(std::env::temp_dir)
+                .join("kaiten")
+                .join("files"),
             tool_router: Self::tool_router(),
         }
     }
@@ -962,6 +986,45 @@ impl KaitenMcp {
                 .await
         );
         json_result(&projections::FileView::from(&file))
+    }
+
+    #[tool(
+        description = "Download a card attachment to the LOCAL filesystem (binary content cannot be returned over MCP). file_id is the numeric id or the uid from get_card files. Saved to save_path (a file path, or an existing directory) or, when omitted, to <user cache dir>/kaiten/files/<card_id>/<file ref>/<original name> (e.g. ~/.cache/kaiten/files/... on Linux), which is always refreshed; an existing file at an explicit save_path makes the call fail unless overwrite=true. Returns {path (absolute), name, size, mime_type}. SECURITY: classic attachments live on a public unguessable URL without authentication; the API token is sent only to your Kaiten host, never to the file storage."
+    )]
+    async fn download_file(
+        &self,
+        Parameters(p): Parameters<DownloadFileParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let Ok(file_ref) = p.file_id.parse::<FileRef>();
+        let files = try_api!(self.client.files().list(p.card_id).await);
+        let file =
+            try_args!(download::find_file(p.card_id, &files, &file_ref).map_err(|e| e.to_string()));
+        let name = download::safe_file_name(file);
+        let default_dir = self
+            .download_dir
+            .join(p.card_id.to_string())
+            .join(FileRef::from(file).to_string());
+        let target = try_args!(
+            download::target_path(p.save_path.as_deref().map(Path::new), &default_dir, &name)
+                .map_err(|e| e.to_string())
+        );
+        if p.save_path.is_some() {
+            try_args!(
+                download::ensure_writable(&target, p.overwrite.unwrap_or(false), "overwrite=true")
+                    .map_err(|e| e.to_string())
+            );
+        } else {
+            try_args!(
+                std::fs::create_dir_all(&default_dir)
+                    .map_err(|e| format!("cannot create {}: {e}", default_dir.display()))
+            );
+        }
+        let saved = try_args!(
+            download::save(&self.client, file, &target)
+                .await
+                .map_err(|e| e.to_string())
+        );
+        json_result(&saved)
     }
 
     #[tool(description = "Detach (remove) a file from a card by file id (see get_card files).")]
@@ -1935,7 +1998,7 @@ mod tests {
     }
 
     #[test]
-    fn registers_exactly_35_tools_with_spec_names() {
+    fn registers_exactly_36_tools_with_spec_names() {
         let tools = KaitenMcp::tool_router().list_all();
         let mut names: Vec<String> = tools.iter().map(|t| t.name.to_string()).collect();
         names.sort();
@@ -1975,9 +2038,183 @@ mod tests {
             "set_card_responsible",
             "add_time_log",
             "list_time_logs",
+            "download_file",
         ];
         expected.sort_unstable();
         assert_eq!(names, expected);
+    }
+
+    // --- issue #12: download_file ---
+
+    fn card_with_storage(server: &MockServer) -> String {
+        CARD_FULL_FIXTURE.replace("https://files.kaiten.ru", &server.uri())
+    }
+
+    async fn mock_card_and_classic_file(server: &MockServer, downloads: u64) {
+        Mock::given(method("GET"))
+            .and(path("/cards/67089469"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(card_with_storage(server)))
+            .mount(server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/48c405aa-a7a3-455e-9752-f2c3225cfecb.txt"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(b"attachment body".to_vec()))
+            .expect(downloads)
+            .mount(server)
+            .await;
+    }
+
+    #[tokio::test]
+    async fn download_file_saves_into_given_dir_and_returns_descriptor() {
+        let server = MockServer::start().await;
+        mock_card_and_classic_file(&server, 1).await;
+        let dir = tempfile::tempdir().unwrap();
+
+        let mcp = mcp_for(&server);
+        let result = mcp
+            .download_file(Parameters(super::DownloadFileParams {
+                card_id: 67_089_469,
+                file_id: "61256602".into(),
+                save_path: Some(dir.path().to_string_lossy().into_owned()),
+                overwrite: None,
+            }))
+            .await
+            .unwrap();
+        assert_ne!(result.is_error, Some(true), "{}", tool_text(&result));
+        let value: serde_json::Value = serde_json::from_str(&tool_text(&result)).unwrap();
+        let expected = dir.path().join("probe-attach.txt");
+        assert_eq!(value["path"], expected.to_string_lossy().as_ref());
+        assert_eq!(value["name"], "probe-attach.txt");
+        assert_eq!(value["size"], 15);
+        assert_eq!(
+            std::fs::read_to_string(expected).unwrap(),
+            "attachment body"
+        );
+    }
+
+    #[tokio::test]
+    async fn download_file_by_uid_resolves_relative_url_on_api_host_with_bearer() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/cards/5"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(
+                r#"{"id": 5, "title": "t", "files": [{"id": "6a8e66af-0000-0000-0000-000000000000",
+                    "name": "report.xlsx", "size": "3",
+                    "url": "/api/v1/cards/cu/files/6a8e66af-0000-0000-0000-000000000000"}]}"#,
+            ))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path(
+                "/api/v1/cards/cu/files/6a8e66af-0000-0000-0000-000000000000",
+            ))
+            .and(header("Authorization", "Bearer test-token"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(b"xls".to_vec()))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let dir = tempfile::tempdir().unwrap();
+
+        let mcp = mcp_for(&server);
+        let result = mcp
+            .download_file(Parameters(super::DownloadFileParams {
+                card_id: 5,
+                file_id: "6a8e66af-0000-0000-0000-000000000000".into(),
+                save_path: Some(dir.path().to_string_lossy().into_owned()),
+                overwrite: None,
+            }))
+            .await
+            .unwrap();
+        assert_ne!(result.is_error, Some(true), "{}", tool_text(&result));
+        assert_eq!(
+            std::fs::read(dir.path().join("report.xlsx")).unwrap(),
+            b"xls"
+        );
+    }
+
+    /// No save_path: a per-user cache dir keyed by card and file ref, so two
+    /// same-named attachments never clobber each other; the path is absolute.
+    #[tokio::test]
+    async fn download_file_default_location_is_per_file_under_the_cache_dir() {
+        let server = MockServer::start().await;
+        mock_card_and_classic_file(&server, 2).await;
+        let cache = tempfile::tempdir().unwrap();
+
+        let mut mcp = mcp_for(&server);
+        mcp.download_dir = cache.path().to_path_buf();
+        for _ in 0..2 {
+            // the default location is refreshed, never refused
+            let result = mcp
+                .download_file(Parameters(super::DownloadFileParams {
+                    card_id: 67_089_469,
+                    file_id: "61256602".into(),
+                    save_path: None,
+                    overwrite: None,
+                }))
+                .await
+                .unwrap();
+            assert_ne!(result.is_error, Some(true), "{}", tool_text(&result));
+            let value: serde_json::Value = serde_json::from_str(&tool_text(&result)).unwrap();
+            let expected = cache
+                .path()
+                .join("67089469")
+                .join("61256602")
+                .join("probe-attach.txt");
+            assert_eq!(value["path"], expected.to_string_lossy().as_ref());
+            assert!(std::path::Path::new(value["path"].as_str().unwrap()).is_absolute());
+            assert_eq!(
+                std::fs::read_to_string(expected).unwrap(),
+                "attachment body"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn download_file_unknown_id_is_tool_error_listing_files() {
+        let server = MockServer::start().await;
+        mock_card_and_classic_file(&server, 0).await;
+
+        let mcp = mcp_for(&server);
+        let result = mcp
+            .download_file(Parameters(super::DownloadFileParams {
+                card_id: 67_089_469,
+                file_id: "999".into(),
+                save_path: None,
+                overwrite: None,
+            }))
+            .await
+            .unwrap();
+        assert_eq!(result.is_error, Some(true));
+        let text = tool_text(&result);
+        assert!(text.contains("no file `999`"), "{text}");
+        assert!(text.contains("61256602"), "{text}");
+    }
+
+    #[tokio::test]
+    async fn download_file_refuses_existing_save_path_without_overwrite() {
+        let server = MockServer::start().await;
+        mock_card_and_classic_file(&server, 0).await;
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("keep.txt");
+        std::fs::write(&target, "old").unwrap();
+
+        let mcp = mcp_for(&server);
+        let result = mcp
+            .download_file(Parameters(super::DownloadFileParams {
+                card_id: 67_089_469,
+                file_id: "61256602".into(),
+                save_path: Some(target.to_string_lossy().into_owned()),
+                overwrite: None,
+            }))
+            .await
+            .unwrap();
+        assert_eq!(result.is_error, Some(true));
+        assert!(
+            tool_text(&result).contains("overwrite=true"),
+            "{}",
+            tool_text(&result)
+        );
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "old");
     }
     fn update_params(properties: serde_json::Value) -> super::UpdateCardParams {
         super::UpdateCardParams {

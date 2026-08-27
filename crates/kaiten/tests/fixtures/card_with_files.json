@@ -1,0 +1,49 @@
+{
+  "id": 67089469,
+  "uid": "c78e313c-ab37-4456-9eb0-904681c4e309",
+  "title": "test card from cli",
+  "board_id": 1826109,
+  "column_id": 6308511,
+  "lane_id": 3419587,
+  "condition": 1,
+  "state": 1,
+  "archived": false,
+  "created": "2026-07-16T18:28:45.361Z",
+  "updated": "2026-08-27T10:47:00.524Z",
+  "files": [
+    {
+      "id": 61256602,
+      "uid": "48c405aa-a7a3-455e-9752-f2c3225cfecb",
+      "url": "https://files.kaiten.ru/48c405aa-a7a3-455e-9752-f2c3225cfecb.txt",
+      "name": "probe-attach.txt",
+      "sort_order": 1.5,
+      "type": 1,
+      "card_id": 67089469,
+      "author_id": 1068514,
+      "size": 58,
+      "external": false,
+      "comment_id": null,
+      "card_cover": false,
+      "deleted": false,
+      "mime_type": "text/plain",
+      "created": "2026-07-16T19:00:00.000Z",
+      "updated": "2026-07-16T19:00:00.000Z"
+    },
+    {
+      "id": "6a8e66af-0000-0000-0000-000000000000",
+      "name": "report.xlsx",
+      "size": "58818",
+      "mime_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "author_uid": "51b4f5a0-0000-0000-0000-000000000000",
+      "card_uid": "c78e313c-ab37-4456-9eb0-904681c4e309",
+      "entity_type": "card",
+      "created": "2026-08-10T07:26:08.653Z",
+      "resizes": [],
+      "card_cover": false,
+      "deleted": false,
+      "type": 11,
+      "url": "/api/v1/cards/c78e313c-ab37-4456-9eb0-904681c4e309/files/6a8e66af-0000-0000-0000-000000000000",
+      "card_id": 67089469
+    }
+  ]
+}

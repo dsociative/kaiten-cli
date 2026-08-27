@@ -168,11 +168,7 @@ impl KaitenClient {
             if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
                 // The error carries the ACTUAL header value (missing/garbage -> 1);
                 // only the sleep below is clamped to <=5s via `retry_wait_secs`.
-                let reset_secs_raw = resp
-                    .headers()
-                    .get("X-RateLimit-Reset")
-                    .and_then(|v| v.to_str().ok())
-                    .and_then(|v| v.parse::<u64>().ok());
+                let reset_secs_raw = rate_limit_reset(&resp);
                 let reset_secs = reset_secs_raw.unwrap_or(1);
                 retries += 1;
                 if retries > MAX_RETRIES {
@@ -190,24 +186,7 @@ impl KaitenClient {
             tracing::trace!(body = %text, "response body");
 
             if !status.is_success() {
-                let message = serde_json::from_str::<serde_json::Value>(&text)
-                    .ok()
-                    .and_then(|v| v.get("message").and_then(|m| m.as_str()).map(str::to_owned))
-                    .unwrap_or_else(|| {
-                        if text.trim().is_empty() {
-                            status
-                                .canonical_reason()
-                                .unwrap_or("unknown error")
-                                .to_owned()
-                        } else {
-                            text.clone()
-                        }
-                    });
-                return Err(KaitenError::Api {
-                    status: status.as_u16(),
-                    message,
-                    body: text,
-                });
+                return Err(api_error(status, text));
             }
 
             return Ok((status.as_u16(), text));
@@ -251,11 +230,7 @@ impl KaitenClient {
             );
 
             if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
-                let reset_secs_raw = resp
-                    .headers()
-                    .get("X-RateLimit-Reset")
-                    .and_then(|v| v.to_str().ok())
-                    .and_then(|v| v.parse::<u64>().ok());
+                let reset_secs_raw = rate_limit_reset(&resp);
                 retries += 1;
                 if retries > MAX_RETRIES {
                     return Err(KaitenError::RateLimited {
@@ -271,26 +246,61 @@ impl KaitenClient {
             let text = resp.text().await?;
             tracing::trace!(body = %text, "response body");
             if !status.is_success() {
-                let message = serde_json::from_str::<serde_json::Value>(&text)
-                    .ok()
-                    .and_then(|v| v.get("message").and_then(|m| m.as_str()).map(str::to_owned))
-                    .unwrap_or_else(|| {
-                        if text.trim().is_empty() {
-                            status
-                                .canonical_reason()
-                                .unwrap_or("unknown error")
-                                .to_owned()
-                        } else {
-                            text.clone()
-                        }
-                    });
-                return Err(KaitenError::Api {
-                    status: status.as_u16(),
-                    message,
-                    body: text,
-                });
+                return Err(api_error(status, text));
             }
             return Ok(text);
+        }
+    }
+
+    /// GET `url` and return the body bytes (attachment downloads).
+    ///
+    /// The bearer token is sent only when `url` is on the API origin — never
+    /// to the public file host, nor to a storage host reached through a
+    /// redirect (reqwest's default policy follows up to 10 hops and drops
+    /// `Authorization` when the host or port changes; a same-host https→http
+    /// downgrade would keep it, which only Kaiten itself could trigger).
+    /// Retry and tracing mirror `send_with_retry`; the body is binary and
+    /// never traced; errors go through `download_error`.
+    pub(crate) async fn get_bytes(&self, url: &url::Url) -> Result<Vec<u8>> {
+        let with_auth = url.origin() == self.base_url.origin();
+        let mut retries = 0u32;
+        loop {
+            let mut req = self.http.get(url.clone());
+            if with_auth {
+                req = req.bearer_auth(&self.token);
+            }
+            let started = Instant::now();
+            let resp = req.send().await?;
+            let status = resp.status();
+            let elapsed = started.elapsed();
+            tracing::debug!(
+                method = "GET(bytes)",
+                host = url.host_str().unwrap_or("-"),
+                path = url.path(),
+                with_auth,
+                status = status.as_u16(),
+                elapsed_ms = elapsed.as_secs() * 1000 + u64::from(elapsed.subsec_millis()),
+                "http request"
+            );
+
+            if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+                let reset_secs_raw = rate_limit_reset(&resp);
+                retries += 1;
+                if retries > MAX_RETRIES {
+                    return Err(KaitenError::RateLimited {
+                        retry_after_secs: reset_secs_raw.unwrap_or(1),
+                    });
+                }
+                let wait_secs = retry_wait_secs(reset_secs_raw);
+                tracing::debug!(wait_secs, retry = retries, "rate limited, retrying");
+                tokio::time::sleep(Duration::from_secs(wait_secs)).await;
+                continue;
+            }
+            if !status.is_success() {
+                let text = resp.text().await?;
+                return Err(download_error(status, text));
+            }
+            return Ok(resp.bytes().await?.to_vec());
         }
     }
 
@@ -323,6 +333,60 @@ impl KaitenClient {
     pub(crate) async fn request_empty(&self, method: Method, path: &str) -> Result<()> {
         self.send_with_retry(method, path, None, None).await?;
         Ok(())
+    }
+}
+
+/// `X-RateLimit-Reset` as sent (missing/garbage → `None`).
+fn rate_limit_reset(resp: &reqwest::Response) -> Option<u64> {
+    resp.headers()
+        .get("X-RateLimit-Reset")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.parse::<u64>().ok())
+}
+
+/// `api_error` for attachment downloads: a file or storage host answers with
+/// whole HTML pages, so a non-JSON body is summarised by the reason phrase
+/// and only a truncated excerpt is kept.
+fn download_error(status: reqwest::StatusCode, text: String) -> KaitenError {
+    const KEEP: usize = 200;
+    if serde_json::from_str::<serde_json::Value>(&text).is_ok() {
+        return api_error(status, text);
+    }
+    let body = match text.char_indices().nth(KEEP) {
+        Some((cut, _)) => format!("{}…", &text[..cut]),
+        None => text,
+    };
+    KaitenError::Api {
+        status: status.as_u16(),
+        message: status
+            .canonical_reason()
+            .unwrap_or("unknown error")
+            .to_owned(),
+        body,
+    }
+}
+
+/// Non-2xx → `Api { status, message, body }`: `message` is the JSON
+/// `"message"` field, else the reason phrase for an empty body, else the raw
+/// body.
+fn api_error(status: reqwest::StatusCode, text: String) -> KaitenError {
+    let message = serde_json::from_str::<serde_json::Value>(&text)
+        .ok()
+        .and_then(|v| v.get("message").and_then(|m| m.as_str()).map(str::to_owned))
+        .unwrap_or_else(|| {
+            if text.trim().is_empty() {
+                status
+                    .canonical_reason()
+                    .unwrap_or("unknown error")
+                    .to_owned()
+            } else {
+                text.clone()
+            }
+        });
+    KaitenError::Api {
+        status: status.as_u16(),
+        message,
+        body: text,
     }
 }
 

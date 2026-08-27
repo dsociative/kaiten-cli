@@ -175,9 +175,16 @@ impl From<&Blocker> for BlockerView {
 
 #[derive(Debug, serde::Serialize)]
 pub struct FileView {
+    /// Numeric id; 0 when the storage identifies the file only by `uid`.
     pub id: u64,
+    /// UUID of a file on the newer storage (only when `id` is 0) — pass
+    /// either to download_file.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub uid: Option<String>,
     pub name: String,
-    /// Public (unguessable) link — served without authentication.
+    /// Classic storage: public (unguessable) link served without
+    /// authentication. Newer storage: host-root-relative API path that needs
+    /// the token — use download_file.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -188,8 +195,13 @@ pub struct FileView {
 
 impl From<&CardFile> for FileView {
     fn from(f: &CardFile) -> Self {
+        let uid = match kaiten_client::FileRef::from(f) {
+            kaiten_client::FileRef::Uid(uid) => Some(uid),
+            kaiten_client::FileRef::Id(_) => None,
+        };
         Self {
             id: f.id,
+            uid,
             name: f.name.clone(),
             url: f.url.clone(),
             size: f.size,
@@ -438,5 +450,28 @@ mod tests {
         let card = minimal_card();
         let result = MutationResult::new(&card, "https://example.kaiten.ru");
         assert_eq!(result.url, "https://example.kaiten.ru/1");
+    }
+
+    /// Files on the newer storage have no numeric id; the view exposes the
+    /// uid so an agent can pass it to download_file.
+    #[test]
+    fn file_view_exposes_uid_for_uuid_only_files() {
+        let card: kaiten_client::Card = serde_json::from_str(
+            r#"{"id": 1, "title": "t", "files": [
+                {"id": 61256602, "name": "classic.txt", "url": "https://files.kaiten.ru/a.txt"},
+                {"id": "6a8e66af-0000-0000-0000-000000000000", "name": "report.xlsx",
+                 "url": "/api/v1/cards/cu/files/6a8e66af-0000-0000-0000-000000000000"}
+            ]}"#,
+        )
+        .unwrap();
+        let detail = CardDetail::from(&card);
+        let json = serde_json::to_value(&detail).unwrap();
+        assert_eq!(json["files"][0]["id"], 61_256_602);
+        assert!(json["files"][0].get("uid").is_none(), "{json}");
+        assert_eq!(json["files"][1]["id"], 0);
+        assert_eq!(
+            json["files"][1]["uid"],
+            "6a8e66af-0000-0000-0000-000000000000"
+        );
     }
 }
