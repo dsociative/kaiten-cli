@@ -46,6 +46,13 @@ kaiten auth login    # asks for the domain ("mycompany") and token, verifies the
 kaiten auth status   # shows domain, current user and where the token came from
 ```
 
+On-premise installations have no `*.kaiten.ru` domain — log in with the full API
+base URL instead (everything else, MCP included, then works unchanged):
+
+```sh
+kaiten auth login --base-url https://kaiten.corp.local/api/latest
+```
+
 Environment variables override the config file:
 
 | Variable | Meaning |
@@ -61,6 +68,7 @@ Environment variables override the config file:
 
 ```toml
 domain = "mycompany"
+# base_url = "https://kaiten.corp.local/api/latest"   # on-premise: instead of domain
 token = "your-api-token"
 
 [defaults]      # optional: used when --space/--board flags are omitted
@@ -147,7 +155,7 @@ Any other MCP client:
 ```
 
 Authentication is shared with the CLI: run `kaiten auth login` once, or export
-`KAITEN_DOMAIN` / `KAITEN_TOKEN` in the client configuration. Logs go to stderr
+`KAITEN_DOMAIN` / `KAITEN_TOKEN` (or `KAITEN_BASE_URL` for an on-premise installation) in the client configuration. Logs go to stderr
 only — stdout carries the MCP protocol.
 
 ## API coverage

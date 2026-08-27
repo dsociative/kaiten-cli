@@ -168,3 +168,165 @@ async fn status_reports_file_token_source_and_domain() {
         .stdout(predicate::str::contains("domain:       mycompany"))
         .stdout(predicate::str::contains("token source: file"));
 }
+
+// --- issue #13: on-premise installations via `--base-url` / config `base_url` ---
+
+#[tokio::test(flavor = "multi_thread")]
+async fn login_with_base_url_saves_base_url_and_no_domain() {
+    let server = MockServer::start().await;
+    mock_current_user(&server, "secret-token").await;
+    let tmp = tempfile::tempdir().unwrap();
+
+    // deliberately no KAITEN_BASE_URL in the environment: the flag must work on its own
+    kaiten(tmp.path())
+        .args([
+            "auth",
+            "login",
+            "--base-url",
+            &format!("{}/", server.uri()),
+            "--token",
+            "secret-token",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(format!(
+            "Logged in to {} as dxmuser",
+            server.uri()
+        )));
+
+    let body = std::fs::read_to_string(tmp.path().join("config.toml")).unwrap();
+    assert!(
+        body.contains(&format!("base_url = \"{}\"", server.uri())),
+        "{body}"
+    );
+    assert!(!body.contains("domain"), "{body}");
+    assert!(body.contains("token = \"secret-token\""), "{body}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn login_with_base_url_replaces_a_previous_domain() {
+    let server = MockServer::start().await;
+    mock_current_user(&server, "new-token").await;
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::write(
+        tmp.path().join("config.toml"),
+        "domain = \"old\"\ntoken = \"old-token\"\n",
+    )
+    .unwrap();
+
+    kaiten(tmp.path())
+        .args([
+            "auth",
+            "login",
+            "--base-url",
+            &server.uri(),
+            "--token",
+            "new-token",
+        ])
+        .assert()
+        .success();
+
+    let body = std::fs::read_to_string(tmp.path().join("config.toml")).unwrap();
+    assert!(
+        !body.contains("domain"),
+        "stale domain must be cleared: {body}"
+    );
+    assert!(body.contains("base_url = "), "{body}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn login_rejects_base_url_together_with_domain() {
+    let tmp = tempfile::tempdir().unwrap();
+    kaiten(tmp.path())
+        .args([
+            "auth",
+            "login",
+            "--base-url",
+            "https://kaiten.corp.local/api/latest",
+            "--domain",
+            "mycompany",
+            "--token",
+            "t",
+        ])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains("cannot be used with"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn login_with_invalid_base_url_fails_before_any_request() {
+    let server = MockServer::start().await; // no mocks
+    let tmp = tempfile::tempdir().unwrap();
+    kaiten(tmp.path())
+        .args(["auth", "login", "--base-url", "not a url", "--token", "t"])
+        .assert()
+        .failure()
+        .code(1)
+        .stderr(predicate::str::contains("not a URL"));
+    assert!(server.received_requests().await.unwrap().is_empty());
+    assert!(!tmp.path().join("config.toml").exists());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn login_with_base_url_missing_api_prefix_hints_and_saves_nothing() {
+    let server = MockServer::start().await; // /wrong/users/current is not mocked → 404
+    let tmp = tempfile::tempdir().unwrap();
+    kaiten(tmp.path())
+        .args([
+            "auth",
+            "login",
+            "--base-url",
+            &format!("{}/wrong", server.uri()),
+            "--token",
+            "t",
+        ])
+        .assert()
+        .failure()
+        .code(1)
+        .stderr(predicate::str::contains("404"))
+        .stderr(predicate::str::contains("api/latest"));
+    assert!(!tmp.path().join("config.toml").exists());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn status_reports_file_base_url_source() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/current"))
+        .and(header("Authorization", "Bearer file-token"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(USER_CURRENT, "application/json"))
+        .expect(2)
+        .mount(&server)
+        .await;
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::write(
+        tmp.path().join("config.toml"),
+        format!("base_url = \"{}\"\ntoken = \"file-token\"\n", server.uri()),
+    )
+    .unwrap();
+
+    kaiten(tmp.path())
+        .args(["auth", "status"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("domain:       -"))
+        .stdout(predicate::str::contains(format!(
+            "base_url:     {}",
+            server.uri()
+        )))
+        .stdout(predicate::str::contains("url source:   file"))
+        .stdout(predicate::str::contains("token source: file"));
+
+    let out = kaiten(tmp.path())
+        .args(["--json", "auth", "status"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let value: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(value["base_url_source"], "file", "{value}");
+    assert_eq!(value["base_url"], server.uri(), "{value}");
+    assert!(value["domain"].is_null(), "{value}");
+}

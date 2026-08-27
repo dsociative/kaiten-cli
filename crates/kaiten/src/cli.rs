@@ -68,8 +68,12 @@ pub enum AuthCmd {
     /// Verify credentials against /users/current and save config
     Login {
         /// Kaiten domain: <domain>.kaiten.ru
-        #[arg(long)]
+        #[arg(long, group = "target")]
         domain: Option<String>,
+        /// Full API base URL of an on-premise installation instead of --domain,
+        /// e.g. https://kaiten.corp.local/api/latest
+        #[arg(long, group = "target")]
+        base_url: Option<String>,
         /// API token (from your Kaiten profile)
         #[arg(long)]
         token: Option<String>,
