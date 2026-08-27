@@ -420,8 +420,8 @@ pub enum CardExternalLinkCmd {
     Rm { card: String, link_id: u64 },
 }
 
-/// Sections `card view --include` fetches in addition to the card. The
-/// names match the MCP `get_card` `include` values.
+/// Extra sections of `card view --include`. The names match the MCP `get_card`
+/// `include` values.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
 pub enum ViewSection {
     /// Accepted for compatibility: external links are always shown

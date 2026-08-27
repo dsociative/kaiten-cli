@@ -173,8 +173,8 @@ pub struct Blocker {
 /// `/api/v1` that requires the API token. Both parse into this struct: `id`
 /// is `0` when the API identifies the file only by a UUID — address such
 /// files through [`FileRef`], built from `uid` (or, failing that, from the
-/// UUID in `url`). Parsing is
-/// tolerant only for self-describing formats such as JSON.
+/// UUID in `url`). Parsing is tolerant only for self-describing formats such
+/// as JSON.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(from = "RawCardFile")]
 #[non_exhaustive]
@@ -242,7 +242,7 @@ impl From<RawCardFile> for CardFile {
         };
         Self {
             id,
-            uid: raw.uid.or(id_as_uid),
+            uid: raw.uid.or(id_as_uid).filter(|u| !u.is_empty()),
             name: raw.name,
             url: raw.url,
             size: raw.size,
@@ -363,7 +363,7 @@ impl From<&CardFile> for FileRef {
         if file.id != 0 {
             return FileRef::Id(file.id);
         }
-        if let Some(uid) = file.uid.as_deref().filter(|u| !u.is_empty()) {
+        if let Some(uid) = file.uid.as_deref() {
             return FileRef::Uid(uid.to_owned());
         }
         match file.uuid_from_url() {
@@ -656,10 +656,9 @@ mod tests {
         assert!(serde_json::from_str::<CardFile>(r#"{"name": "n"}"#).is_err());
     }
 
-    /// Serialize output is part of the CLI's `--json` contract: no new keys,
-    /// `file_type` still written as `type`.
-    /// The serialized shape is what `card file list --json` prints; `uid`
-    /// joined the key set when the model started carrying it.
+    /// The serialized shape is what `card file list --json` prints (`file_type`
+    /// written as `type`); `uid` joined the key set when the model started
+    /// carrying it.
     #[test]
     fn card_file_serializes_the_model_keys() {
         let value = serde_json::to_value(file(CLASSIC)).unwrap();
@@ -722,6 +721,20 @@ mod tests {
         // nothing to address the file by → the 0 sentinel
         let orphan = file(r#"{"id": 0, "name": "n"}"#);
         assert_eq!(FileRef::from(&orphan), FileRef::Id(0));
+        // an empty string id is no uid at all
+        let empty = file(r#"{"id": "", "name": "n"}"#);
+        assert_eq!(empty.uid, None);
+        assert_eq!(FileRef::from(&empty), FileRef::Id(0));
+        assert!(!FileRef::Uid(String::new()).matches(&empty));
+        // when id is 0 and both are present, the wire uid wins over the url's uuid
+        let both = file(
+            r#"{"id": "aaaaaaaa-0000-0000-0000-000000000000", "name": "n",
+                "url": "/api/v1/cards/c/files/bbbbbbbb-0000-0000-0000-000000000000"}"#,
+        );
+        assert_eq!(
+            FileRef::from(&both),
+            FileRef::Uid("aaaaaaaa-0000-0000-0000-000000000000".into())
+        );
     }
 
     #[test]

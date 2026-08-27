@@ -238,6 +238,6 @@ does not pick up `0.4.0` on its own.
 `kaiten-client` types are `#[non_exhaustive]` (response models and
 `KaitenError`; request types are built with `CreateCard::new` /
 `UpdateCard::default` / `CardFilter::default`), so following the API by adding
-fields is a compatible change. CI runs `cargo semver-checks` against the latest
-crates.io release on every pull request: a PR must fit a MINOR release unless
-it carries the `breaking` label, which declares an intentional break.
+fields is a compatible change. CI runs `cargo semver-checks` on every pull
+request against the PR's base commit: a PR must fit a MINOR release unless it
+carries the `breaking` label, which declares an intentional break.

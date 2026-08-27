@@ -13,7 +13,7 @@ rule changes, change it here in the same PR.
 
 - Build with the stable toolchain. If the default toolchain is nightly without cargo, use `cargo +stable …` (or `RUSTUP_TOOLCHAIN=stable` for tools that shell out to cargo).
 - Before every push: `cargo fmt --all -- --check`, `cargo clippy --all-targets -- -D warnings` (clippy pedantic is on), `cargo test --workspace`.
-- `kaiten-client` changes: `cargo semver-checks check-release -p kaiten-client --baseline-rev v<last tag>` (`cargo install cargo-semver-checks --locked`). CI runs it on every pull request against the latest crates.io release.
+- `kaiten-client` changes: `cargo semver-checks check-release -p kaiten-client --baseline-rev v<last tag>` (`cargo install cargo-semver-checks --locked`). CI runs it on every pull request against the PR's base commit; the check against the last release is the local one before tagging.
 - Bugs are fixed test-first: write the failing test that reproduces the bug, watch it fail, then fix. New behaviour likewise gets its tests before the implementation.
 - Get an independent review of the whole diff before asking the owner to merge; fix Important findings, note Minor ones.
 - Commits, pushes, merges and releases happen only when the owner explicitly asks. No `Co-Authored-By` trailers. Commit messages follow `type(scope): summary` (`feat`, `fix`, `test`, `docs`, `ci`, `chore`; `!` for breaking).
@@ -22,7 +22,7 @@ rule changes, change it here in the same PR.
 
 - `kaiten-client` response models and `KaitenError` are `#[non_exhaustive]`; request types are built with `CreateCard::new(board_id, title)`, `UpdateCard::default()`, `CardFilter::default()` and field assignment. Adding fields and variants is therefore a MINOR change; removals, renames and type changes are MAJOR.
 - CLI flags/outputs, `config.toml` keys, env vars and MCP tool names/params/result shapes are contracts: add, never change or remove, until a breaking release. Deprecate instead (help annotation + one stderr line), keep the old form working.
-- Versions: new functionality → MINOR (`0.5` → `0.6`), fixes and dependency bumps → PATCH. A breaking change of `kaiten-client` ships in the next `0.y` and the PR carries the `breaking` label (CI then runs `cargo semver-checks --release-type major`). Version numbers are decided at release time — do not write them into issues.
+- Versions: new functionality → MINOR (`0.5` → `0.6`), fixes and dependency bumps → PATCH. A breaking change of `kaiten-client` ships in the next `0.y` and the PR carries the `breaking` label (CI then runs `cargo semver-checks --release-type major`; the label is read when the job runs, so re-run after adding it). `cargo semver-checks` does not report a removed derive (e.g. `Default`) — list such breaks in the PR yourself. Version numbers are decided at release time — do not write them into issues.
 - Release: bump the workspace version and the `kaiten-client` pin, run the tests, commit `chore(release): X.Y.Z`, `cargo publish --dry-run -p kaiten-client`, tag `vX.Y.Z`, push master and the tag. `release.yml` builds the binaries and the GitHub release, `publish.yml` publishes both crates (Trusted Publishing). Yank a wrong version rather than re-using it.
 
 ## Tests

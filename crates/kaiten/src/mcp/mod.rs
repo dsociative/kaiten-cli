@@ -180,8 +180,8 @@ pub struct GetCardParams {
     pub include: Option<Vec<IncludeSection>>,
 }
 
-/// Sections `get_card` can fetch in addition to the card. The names match
-/// the CLI `card view --include` values.
+/// Extra sections of `get_card`. The names match the CLI `card view --include`
+/// values.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum IncludeSection {
@@ -683,7 +683,11 @@ impl KaitenMcp {
         let mut detail = CardDetail::from(&card);
         let include = p.include.unwrap_or_default();
         // IncludeSection::ExternalLinks is accepted for compatibility: the
-        // links are already part of the card response.
+        // links are already part of the card response; requesting them only
+        // keeps the key present (as `[]`) when the card has none.
+        if include.contains(&IncludeSection::ExternalLinks) {
+            detail.external_links.get_or_insert_with(Vec::new);
+        }
         if include.contains(&IncludeSection::Comments) {
             let comments = try_api!(self.client.comments().list(p.card_id).await);
             detail.comments = Some(comments.iter().map(CommentView::from).collect());
@@ -2849,6 +2853,48 @@ mod tests {
         assert_eq!(both["external_links"].as_array().unwrap().len(), 1);
         assert_eq!(both["comments"][0]["text"], "hi");
         assert_eq!(both["id"], 67_089_469, "{both}");
+    }
+
+    /// `include: ["external_links"]` on a card without links keeps the pre-0.6
+    /// shape — an empty array — instead of dropping the key.
+    #[tokio::test]
+    async fn get_card_include_external_links_on_a_card_without_links_gives_an_empty_array() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/cards/67089469"))
+            .respond_with(ResponseTemplate::new(200).set_body_raw(
+                include_str!("../../tests/fixtures/card_with_files.json"),
+                "application/json",
+            ))
+            .expect(2)
+            .mount(&server)
+            .await;
+        mount_external_links(&server, 0).await;
+        let mcp = mcp_for(&server);
+
+        let plain = mcp
+            .get_card(Parameters(GetCardParams {
+                card_id: 67_089_469,
+                include: None,
+            }))
+            .await
+            .unwrap();
+        let plain: serde_json::Value = serde_json::from_str(&tool_text(&plain)).unwrap();
+        assert!(plain.get("external_links").is_none(), "{plain}");
+
+        let requested = mcp
+            .get_card(Parameters(GetCardParams {
+                card_id: 67_089_469,
+                include: Some(vec![IncludeSection::ExternalLinks]),
+            }))
+            .await
+            .unwrap();
+        let requested: serde_json::Value = serde_json::from_str(&tool_text(&requested)).unwrap();
+        assert_eq!(
+            requested["external_links"],
+            serde_json::json!([]),
+            "{requested}"
+        );
     }
 
     #[test]

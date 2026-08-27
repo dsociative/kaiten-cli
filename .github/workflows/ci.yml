@@ -31,20 +31,37 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --workspace
 
-  # Public API of the published `kaiten-client` crate vs its latest release on
-  # crates.io. A pull request must fit a minor release (additive changes only)
-  # unless it carries the `breaking` label, which declares an intentional
-  # major (0.y) bump. Pull requests only: master between a declared break and
-  # its release would otherwise be red.
+  # Public API of the published `kaiten-client` crate: this pull request vs its
+  # base commit. Additive changes pass; a breaking change fails unless the PR
+  # carries the `breaking` label (read live, so re-running after labelling
+  # counts), which declares an intentional major (0.y) bump. The release-time
+  # check against the last tag is run locally (see AGENTS.md). Known blind
+  # spot of cargo-semver-checks 0.50: a removed derive (e.g. `Default`) is not
+  # reported — list such breaks in the PR by hand.
   semver:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
       - uses: taiki-e/install-action@cargo-semver-checks
       - uses: Swatinem/rust-cache@v2
-      - run: cargo semver-checks check-release -p kaiten-client --release-type ${{ contains(github.event.pull_request.labels.*.name, 'breaking') && 'major' || 'minor' }}
+      - name: Release type from the PR labels
+        id: release-type
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh pr view "${{ github.event.pull_request.number }}" --json labels -q '.labels[].name' | grep -qx breaking; then
+            echo "type=major" >> "$GITHUB_OUTPUT"
+          else
+            echo "type=minor" >> "$GITHUB_OUTPUT"
+          fi
+      - run: cargo semver-checks check-release -p kaiten-client --baseline-rev ${{ github.event.pull_request.base.sha }} --release-type ${{ steps.release-type.outputs.type }}
 
   # Line coverage of the whole workspace test suite, including the `kaiten`
   # binary the integration tests spawn (cargo-llvm-cov instruments child

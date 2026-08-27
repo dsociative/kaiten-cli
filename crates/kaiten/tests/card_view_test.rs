@@ -373,3 +373,45 @@ async fn card_view_prints_external_links_from_the_card_without_a_request() {
     let value: serde_json::Value = serde_json::from_slice(&out).unwrap();
     assert_eq!(value["external_links"][0]["id"], 21_181_168, "{value}");
 }
+
+/// A card without links: `--include external_links` prints no section, the
+/// `--json` envelope still carries `external_links: []`, and no request goes
+/// to the links endpoint.
+#[tokio::test(flavor = "multi_thread")]
+async fn card_view_include_external_links_on_a_card_without_links() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/cards/67089469"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            include_str!("fixtures/card_with_files.json"),
+            "application/json",
+        ))
+        .expect(2)
+        .mount(&server)
+        .await;
+    mock_external_links(&server, 0).await;
+    let tmp = tempfile::tempdir().unwrap();
+
+    kaiten(tmp.path(), &server.uri())
+        .args(["card", "view", "67089469", "--include", "external_links"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("External links:").not());
+
+    let out = kaiten(tmp.path(), &server.uri())
+        .args([
+            "--json",
+            "card",
+            "view",
+            "67089469",
+            "--include",
+            "external_links",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let value: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(value["external_links"], serde_json::json!([]), "{value}");
+}
