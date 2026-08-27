@@ -84,51 +84,67 @@ async fn login(
     file.token = Some(token);
     file.save()?;
 
-    let where_ = match &target {
+    let target_label = match &target {
         LoginTarget::BaseUrl(url) => url.clone(),
         LoginTarget::Domain(domain) => format!("{domain}.kaiten.ru"),
     };
-    println!("Logged in to {where_} as {}", output::user_label(&user));
+    println!(
+        "Logged in to {target_label} as {}",
+        output::user_label(&user)
+    );
     Ok(())
 }
 
-/// `--base-url` must be an absolute http(s) URL without query or fragment;
-/// the trailing slash is dropped so the client can append `/users/current`
-/// and friends.
+/// `--base-url` must be an absolute http(s) URL without query, fragment or
+/// credentials (the bearer token is the only authentication; userinfo would
+/// only end up in config.toml); the trailing slash is dropped so the client
+/// can append `/users/current` and friends.
 fn validate_base_url(raw: &str) -> Result<String, CliError> {
-    const EXPECTED: &str = "expected an http(s) URL like https://host/api/latest";
+    const EXPECTED: &str = "expected something like https://host/api/latest";
     let url = raw.trim().trim_end_matches('/');
-    match url::Url::parse(url) {
-        Ok(parsed)
-            if parsed.has_host()
-                && ["http", "https"].contains(&parsed.scheme())
-                && parsed.query().is_none()
-                && parsed.fragment().is_none() =>
-        {
-            Ok(url.to_string())
-        }
-        Ok(_) => Err(CliError::InvalidArg(format!(
-            "--base-url must be an http(s) URL without query or fragment: {raw} ({EXPECTED})"
-        ))),
-        Err(e) => Err(CliError::InvalidArg(format!(
-            "--base-url is not a URL: {raw}: {e} ({EXPECTED})"
-        ))),
+    if url.is_empty() {
+        return Err(CliError::InvalidArg(format!(
+            "--base-url is empty ({EXPECTED})"
+        )));
     }
+    let parsed = url::Url::parse(url).map_err(|e| {
+        CliError::InvalidArg(format!("--base-url is not a URL: {raw}: {e} ({EXPECTED})"))
+    })?;
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        // deliberately not echoing the value: it may contain a password
+        return Err(CliError::InvalidArg(format!(
+            "--base-url must not contain credentials ({EXPECTED})"
+        )));
+    }
+    if !parsed.has_host()
+        || !["http", "https"].contains(&parsed.scheme())
+        || parsed.query().is_some()
+        || parsed.fragment().is_some()
+    {
+        return Err(CliError::InvalidArg(format!(
+            "--base-url must be an http(s) URL without query or fragment: {raw} ({EXPECTED})"
+        )));
+    }
+    Ok(url.to_string())
 }
 
-/// On an explicit base URL, a 404 from `/users/current` — or a non-JSON
-/// answer, which is what Kaiten's web root returns for any path — almost
-/// always means the API prefix is missing. Lead with that; real servers
-/// send whole HTML pages as the error body.
+/// On an explicit base URL, a 404 from `/users/current` — or an answer that
+/// is not JSON at all, which is what Kaiten's web root returns for any path —
+/// almost always means the API prefix is missing. Lead with that; real
+/// servers send whole HTML pages as the error body. Valid JSON that merely
+/// does not fit the `User` model (`is_data`) is a different problem and is
+/// reported as the decode error it is.
 fn login_error(target: &LoginTarget, api_base: &str, err: KaitenError) -> CliError {
     const HINT: &str = "base URL must include the API prefix, e.g. https://host/api/latest";
     match (target, &err) {
         (LoginTarget::BaseUrl(_), KaitenError::Api { status: 404, .. }) => CliError::InvalidArg(
             format!("{HINT} (GET {api_base}/users/current returned HTTP 404)"),
         ),
-        (LoginTarget::BaseUrl(_), KaitenError::Decode { .. }) => CliError::InvalidArg(format!(
-            "{HINT} (GET {api_base}/users/current returned something that is not JSON: {err})"
-        )),
+        (LoginTarget::BaseUrl(_), KaitenError::Decode { source, .. }) if !source.is_data() => {
+            CliError::InvalidArg(format!(
+                "{HINT} (GET {api_base}/users/current returned something that is not JSON: {err})"
+            ))
+        }
         _ => CliError::Api(err),
     }
 }

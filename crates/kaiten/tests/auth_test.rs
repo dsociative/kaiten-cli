@@ -440,3 +440,87 @@ async fn status_reports_env_base_url_over_file_base_url_and_env_domain_source() 
     assert_eq!(value["base_url_source"], "env", "{value}");
     assert_eq!(value["domain"], "envdomain", "{value}");
 }
+
+/// Valid JSON that does not fit the `User` model is a model mismatch, not a
+/// wrong base URL — the API-prefix hint must not claim otherwise.
+#[tokio::test(flavor = "multi_thread")]
+async fn login_with_base_url_and_mismatched_json_reports_the_decode_error_without_the_hint() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/current"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(r#"{"foo": 1}"#, "application/json"))
+        .mount(&server)
+        .await;
+    let tmp = tempfile::tempdir().unwrap();
+    kaiten(tmp.path())
+        .args(["auth", "login", "--base-url", &server.uri(), "--token", "t"])
+        .assert()
+        .failure()
+        .code(1)
+        .stderr(predicate::str::contains("failed to decode response"))
+        .stderr(predicate::str::contains("API prefix").not());
+    assert!(!tmp.path().join("config.toml").exists());
+}
+
+/// Credentials in the URL can never work (the bearer header wins) and must
+/// not end up in config.toml or on stdout.
+#[tokio::test(flavor = "multi_thread")]
+async fn login_rejects_base_url_with_userinfo() {
+    let tmp = tempfile::tempdir().unwrap();
+    for bad in [
+        "https://user:secret@host/api/latest",
+        "https://user@host/api/latest",
+    ] {
+        kaiten(tmp.path())
+            .args(["auth", "login", "--base-url", bad, "--token", "t"])
+            .assert()
+            .failure()
+            .code(1)
+            .stderr(predicate::str::contains("credentials"))
+            .stderr(predicate::str::contains("secret").not());
+    }
+    assert!(!tmp.path().join("config.toml").exists());
+}
+
+/// The on-premise happy path: only `base_url` in the file.
+#[tokio::test(flavor = "multi_thread")]
+async fn status_reports_file_base_url_source() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/users/current"))
+        .and(header("Authorization", "Bearer file-token"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(USER_CURRENT, "application/json"))
+        .expect(2)
+        .mount(&server)
+        .await;
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::write(
+        tmp.path().join("config.toml"),
+        format!("base_url = \"{}\"\ntoken = \"file-token\"\n", server.uri()),
+    )
+    .unwrap();
+
+    kaiten(tmp.path())
+        .args(["auth", "status"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("domain:       -"))
+        .stdout(predicate::str::contains(format!(
+            "base_url:     {}\n",
+            server.uri()
+        )))
+        .stdout(predicate::str::contains("url source:   file\n"))
+        .stdout(predicate::str::contains("token source: file"));
+
+    let out = kaiten(tmp.path())
+        .args(["--json", "auth", "status"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let value: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(value["base_url_source"], "file", "{value}");
+    assert_eq!(value["base_url"], server.uri(), "{value}");
+    assert!(value["domain"].is_null(), "{value}");
+}
