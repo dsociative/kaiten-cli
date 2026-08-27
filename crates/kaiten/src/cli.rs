@@ -185,9 +185,8 @@ pub enum CardCmd {
         /// Deprecated: use `--include comments`
         #[arg(long)]
         comments: bool,
-        /// Extra sections to fetch with the card: comments (external links
-        /// always come with the card; `external_links` is accepted for
-        /// compatibility). Comma-separated or repeated.
+        /// Extra sections to fetch with the card: comments (comma-separated
+        /// or repeated). External links always come with the card.
         #[arg(long, value_delimiter = ',', value_enum)]
         include: Vec<ViewSection>,
     },
@@ -424,7 +423,7 @@ pub enum CardExternalLinkCmd {
 /// `include` values.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
 pub enum ViewSection {
-    /// Accepted for compatibility: external links are always shown
+    /// Deprecated: external links are always shown
     #[value(name = "external_links")]
     ExternalLinks,
     /// Comments

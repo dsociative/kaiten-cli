@@ -175,6 +175,10 @@ async fn card_view_include_external_links_is_accepted_and_makes_no_request() {
         .args(["card", "view", "67089469", "--include", "external_links"])
         .assert()
         .success()
+        .stderr(predicate::str::contains(
+            "--include external_links is deprecated: external links are always shown",
+        ))
+        .stdout(predicate::str::contains("deprecated").not())
         .stdout(predicate::str::contains("External links:"))
         .stdout(predicate::str::contains("21181168"))
         .stdout(predicate::str::contains("https://example.com/fixture-link"))
@@ -201,7 +205,10 @@ async fn card_view_include_both_sections_comma_separated() {
         .success()
         .stdout(predicate::str::contains("External links:"))
         .stdout(predicate::str::contains("Comments:"))
-        .stderr(predicate::str::contains("deprecated").not());
+        .stderr(predicate::str::contains(
+            "--include external_links is deprecated",
+        ))
+        .stderr(predicate::str::contains("--comments is deprecated").not());
 }
 
 /// `--comments` keeps working but says what to use instead — on stderr, so

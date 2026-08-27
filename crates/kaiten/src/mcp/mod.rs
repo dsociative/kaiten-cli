@@ -176,7 +176,7 @@ pub struct GetCardParams {
     /// Card id
     pub card_id: u64,
     /// Extra sections: "comments" (one more request). External links come
-    /// with the card itself; "external_links" is accepted for compatibility.
+    /// with the card itself; "external_links" is deprecated and does nothing.
     pub include: Option<Vec<IncludeSection>>,
 }
 

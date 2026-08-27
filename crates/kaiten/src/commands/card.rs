@@ -419,9 +419,14 @@ async fn run_view(
     if comments_flag {
         eprintln!("warning: --comments is deprecated, use --include comments");
     }
-    // External links come with the card itself; the value is accepted for
-    // compatibility and only affects the `--json` envelope below.
+    // External links come with the card itself; the value is deprecated,
+    // accepted for compatibility, and only affects the `--json` envelope below.
     let links_requested = include.contains(&ViewSection::ExternalLinks);
+    if links_requested {
+        eprintln!(
+            "warning: --include external_links is deprecated: external links are always shown"
+        );
+    }
     let with_comments = comments_flag || include.contains(&ViewSection::Comments);
     let card_id = parse_card_ref(card)?;
     let card = client.cards().get(card_id).await?;
