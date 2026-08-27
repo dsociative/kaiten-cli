@@ -107,9 +107,10 @@ fn validate_base_url(raw: &str) -> Result<String, CliError> {
             "--base-url is empty ({EXPECTED})"
         )));
     }
-    let parsed = url::Url::parse(url).map_err(|e| {
-        CliError::InvalidArg(format!("--base-url is not a URL: {raw}: {e} ({EXPECTED})"))
-    })?;
+    // The value is never echoed: a scheme-less `user:secret@host` parses as a
+    // `user:` scheme and would slip past the credentials check below.
+    let parsed = url::Url::parse(url)
+        .map_err(|e| CliError::InvalidArg(format!("--base-url is not a URL: {e} ({EXPECTED})")))?;
     if !parsed.username().is_empty() || parsed.password().is_some() {
         // deliberately not echoing the value: it may contain a password
         return Err(CliError::InvalidArg(format!(
@@ -122,7 +123,7 @@ fn validate_base_url(raw: &str) -> Result<String, CliError> {
         || parsed.fragment().is_some()
     {
         return Err(CliError::InvalidArg(format!(
-            "--base-url must be an http(s) URL without query or fragment: {raw} ({EXPECTED})"
+            "--base-url must be an http(s) URL without query or fragment ({EXPECTED})"
         )));
     }
     Ok(url.to_string())
