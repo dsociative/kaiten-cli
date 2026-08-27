@@ -31,6 +31,21 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --workspace
 
+  # Public API of the published `kaiten-client` crate vs its latest release on
+  # crates.io. A pull request must fit a minor release (additive changes only)
+  # unless it carries the `breaking` label, which declares an intentional
+  # major (0.y) bump. Pull requests only: master between a declared break and
+  # its release would otherwise be red.
+  semver:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@cargo-semver-checks
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo semver-checks check-release -p kaiten-client --release-type ${{ contains(github.event.pull_request.labels.*.name, 'breaking') && 'major' || 'minor' }}
+
   # Line coverage of the whole workspace test suite, including the `kaiten`
   # binary the integration tests spawn (cargo-llvm-cov instruments child
   # processes too). Uploaded to Codecov for the README badge and the PR
