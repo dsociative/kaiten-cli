@@ -2213,7 +2213,7 @@ mod tests {
             .mount(server)
             .await;
         Mock::given(method("GET"))
-            .and(path("/48c405aa-a7a3-455e-9752-f2c3225cfecb.txt"))
+            .and(path("/d4586f6a-3e00-4253-aac7-a6f6c4190f40.txt"))
             .respond_with(ResponseTemplate::new(200).set_body_bytes(b"attachment body".to_vec()))
             .expect(downloads)
             .mount(server)
@@ -2230,7 +2230,7 @@ mod tests {
         let result = mcp
             .download_file(Parameters(super::DownloadFileParams {
                 card_id: 67_089_469,
-                file_id: "61256602".into(),
+                file_id: "62769658".into(),
                 save_path: Some(dir.path().to_string_lossy().into_owned()),
                 overwrite: None,
             }))
@@ -2328,7 +2328,7 @@ mod tests {
             let result = mcp
                 .download_file(Parameters(super::DownloadFileParams {
                     card_id: 67_089_469,
-                    file_id: "61256602".into(),
+                    file_id: "62769658".into(),
                     save_path: None,
                     overwrite: None,
                 }))
@@ -2339,7 +2339,7 @@ mod tests {
             let expected = cache
                 .path()
                 .join("67089469")
-                .join("61256602")
+                .join("62769658")
                 .join("probe-attach.txt");
             assert_eq!(value["path"], expected.to_string_lossy().as_ref());
             assert!(std::path::Path::new(value["path"].as_str().unwrap()).is_absolute());
@@ -2368,7 +2368,7 @@ mod tests {
         assert_eq!(result.is_error, Some(true));
         let text = tool_text(&result);
         assert!(text.contains("no file `999`"), "{text}");
-        assert!(text.contains("61256602"), "{text}");
+        assert!(text.contains("62769658"), "{text}");
     }
 
     #[tokio::test]
@@ -2383,7 +2383,7 @@ mod tests {
         let result = mcp
             .download_file(Parameters(super::DownloadFileParams {
                 card_id: 67_089_469,
-                file_id: "61256602".into(),
+                file_id: "62769658".into(),
                 save_path: Some(target.to_string_lossy().into_owned()),
                 overwrite: None,
             }))

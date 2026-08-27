@@ -7,7 +7,13 @@ use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 const CARD_WITH_FILES: &str = include_str!("fixtures/card_with_files.json");
-const CARD_WITHOUT_FILES: &str = include_str!("fixtures/card_get_full.json");
+/// The two-file fixture with `files` emptied: what the API returns for a
+/// card that never had files (`"files": []`).
+fn card_without_files() -> String {
+    let mut card: serde_json::Value = serde_json::from_str(CARD_WITH_FILES).unwrap();
+    card["files"] = serde_json::json!([]);
+    card.to_string()
+}
 const CLASSIC_PATH: &str = "/48c405aa-a7a3-455e-9752-f2c3225cfecb.txt";
 const NEWER_PATH: &str =
     "/api/v1/cards/c78e313c-ab37-4456-9eb0-904681c4e309/files/6a8e66af-0000-0000-0000-000000000000";
@@ -159,7 +165,7 @@ async fn card_file_list_empty_card() {
     Mock::given(method("GET"))
         .and(path("/cards/67089469"))
         .respond_with(
-            ResponseTemplate::new(200).set_body_raw(CARD_WITHOUT_FILES, "application/json"),
+            ResponseTemplate::new(200).set_body_raw(card_without_files(), "application/json"),
         )
         .mount(&api)
         .await;

@@ -77,26 +77,27 @@ async fn list_sends_filter_query_params_and_parses_list_card() {
     };
     let cards = client.cards().list(&filter).await.unwrap();
 
-    assert_eq!(cards.len(), 1);
+    assert_eq!(cards.len(), 5);
     let card = &cards[0];
     assert_eq!(card.id, 67_089_469);
     assert_eq!(card.title, "test card from cli");
     assert_eq!(card.state, Some(1));
     assert_eq!(card.condition, Some(1));
-    // list-карточка приходит БЕЗ description/members/checklists/tags
+    // a list card comes without `description` (unless additional_card_fields asks
+    // for it) but WITH members, tags and checklists — as captured live
     assert!(card.description.is_none());
-    assert!(card.members.is_empty());
-    assert!(card.checklists.is_empty());
-    assert!(card.tags.is_empty());
-    // вложенный board без columns/lanes → пустые векторы
+    assert_eq!(card.members.len(), 1);
+    assert_eq!(card.checklists.len(), 1);
+    assert_eq!(card.tags.len(), 1);
     let board = card.board.as_ref().unwrap();
     assert_eq!(board.id, 1_826_109);
+    // the nested board comes without columns/lanes → defaulted empty vecs
     assert!(board.columns.is_empty());
     assert_eq!(card.column.as_ref().unwrap().column_type, Some(1));
     assert_eq!(card.card_type.as_ref().unwrap().name, "Card");
     assert_eq!(
         card.owner.as_ref().unwrap().email.as_deref(),
-        Some("user@example.com")
+        Some("dxmuser@example.com")
     );
 }
 
@@ -117,7 +118,7 @@ async fn get_parses_full_card() {
     assert_eq!(card.id, 67_089_469);
     assert_eq!(card.description.as_deref(), Some("test **description**"));
     assert_eq!(card.asap, Some(true));
-    assert_eq!(card.comments_total, Some(1));
+    assert_eq!(card.comments_total, Some(2));
     assert_eq!(card.members.len(), 1);
     assert_eq!(card.members[0].user_id, Some(1_068_514));
     assert_eq!(card.members[0].member_type, Some(1));
@@ -126,7 +127,7 @@ async fn get_parses_full_card() {
     assert_eq!(card.tags[0].tag_id, Some(1_110_772));
     assert_eq!(card.checklists.len(), 1);
     assert_eq!(card.checklists[0].name, "todo");
-    assert_eq!(card.checklists[0].items.len(), 1);
+    assert_eq!(card.checklists[0].items.len(), 2);
     assert_eq!(card.checklists[0].items[0].text, "first item");
     assert_eq!(card.checklists[0].items[0].checked, Some(true));
     // links, blockers and files embedded in the full card
@@ -147,9 +148,9 @@ async fn get_parses_full_card() {
     assert_eq!(card.files[0].name, "probe-attach.txt");
     assert_eq!(
         card.files[0].url.as_deref(),
-        Some("https://files.kaiten.ru/48c405aa-a7a3-455e-9752-f2c3225cfecb.txt")
+        Some("https://files.kaiten.ru/d4586f6a-3e00-4253-aac7-a6f6c4190f40.txt")
     );
-    assert_eq!(card.files[0].size, Some(58));
+    assert_eq!(card.files[0].size, Some(15));
 }
 
 /// The `blockers`/`children`/`parents`/`files` keys are conditional in the

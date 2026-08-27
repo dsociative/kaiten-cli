@@ -13,7 +13,7 @@ members: dxmuser
 tags:    cli-test
 asap:    yes
 created: 2026-07-09
-updated: 2026-07-09
+updated: 2026-08-27
 
 Description:
 test **description**
@@ -21,7 +21,7 @@ test **description**
 Checklists:
 todo (11747430)
   [x] first item (65658564)
-  [ ] second item (65658565)
+  [ ] second item (67215897)
 
 Properties:
 {

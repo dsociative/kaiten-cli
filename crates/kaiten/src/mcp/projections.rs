@@ -20,17 +20,6 @@ fn is_zero(v: &u32) -> bool {
     *v == 0
 }
 
-/// Kaiten sends `properties: null` for cards that never had custom
-/// properties and `properties: {}` after the last one is cleared —
-/// both are noise in a projection.
-#[allow(clippy::ref_option)] // signature dictated by serde's skip_serializing_if
-fn no_properties(v: &Option<serde_json::Value>) -> bool {
-    match v {
-        None => true,
-        Some(v) => v.is_null() || v.as_object().is_some_and(serde_json::Map::is_empty),
-    }
-}
-
 /// One card in a list response: `list_cards`, `poll_updates`.
 #[derive(Debug, serde::Serialize)]
 pub struct CardSummary {
@@ -267,7 +256,7 @@ pub struct CardDetail {
     pub tags: Vec<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub checklists: Vec<ChecklistView>,
-    #[serde(skip_serializing_if = "no_properties")]
+    #[serde(skip_serializing_if = "crate::properties::no_properties")]
     pub properties: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub children: Vec<LinkedCardView>,
@@ -327,7 +316,7 @@ pub struct MutationResult {
     pub column: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub board_id: Option<u64>,
-    #[serde(skip_serializing_if = "no_properties")]
+    #[serde(skip_serializing_if = "crate::properties::no_properties")]
     pub properties: Option<serde_json::Value>,
 }
 
