@@ -303,3 +303,51 @@ async fn create_api_error_prints_message_and_body() {
             r#"{"message":"Card should have required property 'board_id'"}"#,
         ));
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn edit_rejects_non_object_properties_json_without_any_request() {
+    let server = MockServer::start().await; // no mocks: nothing may be called
+    let tmp = tempfile::tempdir().unwrap();
+
+    kaiten(tmp.path(), &server.uri())
+        .args([
+            "card",
+            "edit",
+            "67089469",
+            "--properties-json",
+            "\"not an object\"",
+        ])
+        .assert()
+        .failure()
+        .code(1)
+        .stderr(predicate::str::contains("must be a JSON object"));
+    assert!(server.received_requests().await.unwrap().is_empty());
+}
+
+/// Agents (and shells) routinely hand over a JSON *string* holding the
+/// object; it is applied instead of rejected (issue #15).
+#[tokio::test(flavor = "multi_thread")]
+async fn edit_accepts_stringified_properties_object() {
+    let server = MockServer::start().await;
+    Mock::given(method("PATCH"))
+        .and(path("/cards/67089469"))
+        .and(body_json(
+            json!({ "properties": { "id_612634": [18_929_916] } }),
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(CARD_UPDATE, "application/json"))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let tmp = tempfile::tempdir().unwrap();
+
+    kaiten(tmp.path(), &server.uri())
+        .args([
+            "card",
+            "edit",
+            "67089469",
+            "--properties-json",
+            "\"{\\\"id_612634\\\": [18929916]}\"",
+        ])
+        .assert()
+        .success();
+}
