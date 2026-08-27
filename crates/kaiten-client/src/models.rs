@@ -6,6 +6,7 @@
 //! Dates are plain ISO strings (no chrono).
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[non_exhaustive]
 pub struct User {
     pub id: u64,
     #[serde(default)]
@@ -21,6 +22,7 @@ pub struct User {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[non_exhaustive]
 pub struct Space {
     pub id: u64,
     #[serde(default)]
@@ -31,6 +33,7 @@ pub struct Space {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[non_exhaustive]
 pub struct Column {
     pub id: u64,
     pub title: String,
@@ -44,6 +47,7 @@ pub struct Column {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[non_exhaustive]
 pub struct Lane {
     pub id: u64,
     pub title: String,
@@ -56,6 +60,7 @@ pub struct Lane {
 /// A nested `board` inside a card has no `columns`/`lanes` keys,
 /// so both default to empty vectors.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[non_exhaustive]
 pub struct Board {
     pub id: u64,
     pub title: String,
@@ -68,6 +73,7 @@ pub struct Board {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[non_exhaustive]
 pub struct CardType {
     pub id: u64,
     pub name: String,
@@ -81,6 +87,7 @@ pub struct CardType {
 
 /// A tag inside `card.tags`: `id` is the link id, `tag_id` is the company tag id.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[non_exhaustive]
 pub struct CardTag {
     pub id: u64,
     #[serde(default)]
@@ -91,6 +98,7 @@ pub struct CardTag {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[non_exhaustive]
 pub struct CardMember {
     /// User id. ABSENT in PATCH /members/{id} responses (only `user_id`
     /// is present there), hence the default.
@@ -110,6 +118,7 @@ pub struct CardMember {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[non_exhaustive]
 pub struct ChecklistItem {
     pub id: u64,
     pub text: String,
@@ -120,6 +129,7 @@ pub struct ChecklistItem {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[non_exhaustive]
 pub struct Checklist {
     pub id: u64,
     pub name: String,
@@ -136,6 +146,7 @@ pub struct Checklist {
 /// The blocking card is referenced by `blocker_card_id`/`blocker_card_title`
 /// (the `blocker` key in the raw JSON is the *user* who created the block).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[non_exhaustive]
 pub struct Blocker {
     pub id: u64,
     #[serde(default)]
@@ -165,6 +176,7 @@ pub struct Blocker {
 /// tolerant only for self-describing formats such as JSON.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(from = "RawCardFile")]
+#[non_exhaustive]
 pub struct CardFile {
     /// Numeric id on the classic storage; `0` on the newer storage (see above).
     pub id: u64,
@@ -361,6 +373,7 @@ impl std::str::FromStr for FileRef {
 /// GET /cards/{id} returns the full card; GET /cards returns cards
 /// without `description`/`members`/`checklists` — the same model parses both.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[non_exhaustive]
 pub struct Card {
     pub id: u64,
     pub title: String,
@@ -439,6 +452,7 @@ pub struct Card {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[non_exhaustive]
 pub struct Comment {
     pub id: u64,
     pub text: String,
@@ -456,6 +470,7 @@ pub struct Comment {
 
 /// Company-level tag (GET /tags, POST /cards/{id}/tags).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[non_exhaustive]
 pub struct Tag {
     pub id: u64,
     pub name: String,
@@ -465,6 +480,7 @@ pub struct Tag {
 
 /// A time log entry (GET/POST /cards/{id}/time-logs).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[non_exhaustive]
 pub struct TimeLog {
     pub id: u64,
     /// Minutes.
@@ -484,6 +500,7 @@ pub struct TimeLog {
 
 /// Company user role (GET /user-roles). Built-in roles have negative ids.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[non_exhaustive]
 pub struct UserRole {
     pub id: i64,
     pub name: String,
@@ -495,6 +512,7 @@ pub struct UserRole {
 /// `id_{property_id}`; select values are referenced by id (see
 /// [`SelectValue`]) and passed as an ARRAY even for single select.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[non_exhaustive]
 pub struct CustomProperty {
     pub id: u64,
     pub name: String,
@@ -508,6 +526,7 @@ pub struct CustomProperty {
 /// One option of a select-type custom property
 /// (GET /company/custom-properties/{id}/select-values).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[non_exhaustive]
 pub struct SelectValue {
     pub id: u64,
     pub value: String,
@@ -523,6 +542,7 @@ pub struct SelectValue {
 /// (adding one would be a breaking change), so they are read through
 /// [`crate::api::external_links::ExternalLinks::list`].
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[non_exhaustive]
 pub struct ExternalLink {
     pub id: u64,
     #[serde(default)]
