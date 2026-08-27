@@ -152,10 +152,20 @@ pub struct Blocker {
     pub created: Option<String>,
 }
 
-/// A file attached to a card. `url` is served WITHOUT authentication
-/// (an unguessable UUID link) — treat every attachment as public.
+/// A file attached to a card.
+///
+/// Two wire shapes exist (issue #12). The classic storage (`type` 1) sends
+/// a numeric `id` and an absolute `url` on the public file host, served
+/// WITHOUT authentication (an unguessable link — treat every attachment as
+/// public). The newer storage (`type` 11) identifies the file by a UUID in
+/// `id`, sends `size` as a string and a host-root-relative `url` under
+/// `/api/v1` that requires the API token. Both parse into this struct: `id`
+/// is `0` when the API identifies the file only by a UUID — address such
+/// files through [`FileRef`], which recovers the UUID from `url`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(from = "RawCardFile")]
 pub struct CardFile {
+    /// Numeric id on the classic storage; `0` on the newer storage (see above).
     pub id: u64,
     pub name: String,
     #[serde(default)]
@@ -174,6 +184,174 @@ pub struct CardFile {
     pub author_id: Option<u64>,
     #[serde(default)]
     pub created: Option<String>,
+}
+
+/// Wire form of [`CardFile`], tolerant of both storages' encodings. Field
+/// names mirror `CardFile` so `serde_path_to_error` paths stay the same.
+#[derive(serde::Deserialize)]
+struct RawCardFile {
+    id: de::NumOrStr,
+    name: String,
+    #[serde(default)]
+    url: Option<String>,
+    #[serde(default, deserialize_with = "de::opt_u64_or_string")]
+    size: Option<u64>,
+    #[serde(rename = "type", default)]
+    file_type: Option<u8>,
+    #[serde(default)]
+    mime_type: Option<String>,
+    #[serde(default)]
+    external: Option<bool>,
+    #[serde(default)]
+    deleted: Option<bool>,
+    #[serde(default)]
+    author_id: Option<u64>,
+    #[serde(default)]
+    created: Option<String>,
+}
+
+impl From<RawCardFile> for CardFile {
+    fn from(raw: RawCardFile) -> Self {
+        Self {
+            id: raw.id.into_u64().unwrap_or(0),
+            name: raw.name,
+            url: raw.url,
+            size: raw.size,
+            file_type: raw.file_type,
+            mime_type: raw.mime_type,
+            external: raw.external,
+            deleted: raw.deleted,
+            author_id: raw.author_id,
+            created: raw.created,
+        }
+    }
+}
+
+impl CardFile {
+    /// UUID under which the newer storage addresses the file: the last path
+    /// segment of `url` (`/api/v1/cards/{card_uid}/files/{uuid}`).
+    fn uuid_from_url(&self) -> Option<&str> {
+        let path = self.url.as_deref()?.split(['?', '#']).next()?;
+        let last = path.trim_end_matches('/').rsplit('/').next()?;
+        (!last.is_empty()).then_some(last)
+    }
+}
+
+/// Deserializers for values the newer file storage sends as strings.
+mod de {
+    use serde::de::{Error, Visitor};
+
+    /// A JSON number, or a string holding one (`"58818"`).
+    pub(super) enum NumOrStr {
+        Num(u64),
+        Str(String),
+    }
+
+    impl NumOrStr {
+        pub(super) fn into_u64(self) -> Option<u64> {
+            match self {
+                NumOrStr::Num(n) => Some(n),
+                NumOrStr::Str(s) => s.trim().parse().ok(),
+            }
+        }
+    }
+
+    impl<'de> serde::Deserialize<'de> for NumOrStr {
+        fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+            struct V;
+            impl Visitor<'_> for V {
+                type Value = NumOrStr;
+
+                fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                    f.write_str("a non-negative integer or a string")
+                }
+
+                fn visit_u64<E: Error>(self, v: u64) -> Result<NumOrStr, E> {
+                    Ok(NumOrStr::Num(v))
+                }
+
+                fn visit_i64<E: Error>(self, v: i64) -> Result<NumOrStr, E> {
+                    u64::try_from(v)
+                        .map(NumOrStr::Num)
+                        .map_err(|_| E::custom("negative integer"))
+                }
+
+                fn visit_str<E: Error>(self, v: &str) -> Result<NumOrStr, E> {
+                    Ok(NumOrStr::Str(v.to_owned()))
+                }
+
+                fn visit_string<E: Error>(self, v: String) -> Result<NumOrStr, E> {
+                    Ok(NumOrStr::Str(v))
+                }
+            }
+            d.deserialize_any(V)
+        }
+    }
+
+    /// `null`, a number, or a string holding a number; anything else is `None`.
+    pub(super) fn opt_u64_or_string<'de, D: serde::Deserializer<'de>>(
+        d: D,
+    ) -> Result<Option<u64>, D::Error> {
+        Ok(<Option<NumOrStr> as serde::Deserialize>::deserialize(d)?.and_then(NumOrStr::into_u64))
+    }
+}
+
+/// Addresses an attachment for the download APIs: the classic storage's
+/// numeric id, or the newer storage's UUID. Parse one from user input with
+/// `str::parse` (digits → [`Id`](FileRef::Id), anything else →
+/// [`Uid`](FileRef::Uid)); derive one from a [`CardFile`] with `From`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FileRef {
+    Id(u64),
+    Uid(String),
+}
+
+impl FileRef {
+    /// Does this reference address `file`? `Id(0)` never matches — `0` is
+    /// the sentinel for "identified by UUID only".
+    #[must_use]
+    pub fn matches(&self, file: &CardFile) -> bool {
+        match self {
+            FileRef::Id(0) => false,
+            FileRef::Id(id) => file.id == *id,
+            FileRef::Uid(uid) => file
+                .uuid_from_url()
+                .is_some_and(|u| u.eq_ignore_ascii_case(uid)),
+        }
+    }
+}
+
+impl From<&CardFile> for FileRef {
+    fn from(file: &CardFile) -> Self {
+        if file.id != 0 {
+            return FileRef::Id(file.id);
+        }
+        match file.uuid_from_url() {
+            Some(uid) => FileRef::Uid(uid.to_owned()),
+            None => FileRef::Id(0),
+        }
+    }
+}
+
+impl std::fmt::Display for FileRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FileRef::Id(id) => write!(f, "{id}"),
+            FileRef::Uid(uid) => f.write_str(uid),
+        }
+    }
+}
+
+impl std::str::FromStr for FileRef {
+    type Err = std::convert::Infallible;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let s = s.trim();
+        Ok(match s.parse::<u64>() {
+            Ok(id) => FileRef::Id(id),
+            Err(_) => FileRef::Uid(s.to_owned()),
+        })
+    }
 }
 
 /// GET /cards/{id} returns the full card; GET /cards returns cards
@@ -333,4 +511,152 @@ pub struct SelectValue {
     pub color: Option<i64>,
     #[serde(default)]
     pub sort_order: Option<f64>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Shape A: API upload (`type` 1) — numeric `id`, absolute public `url`.
+    const CLASSIC: &str = r#"{
+        "id": 61256602, "uid": "48c405aa-a7a3-455e-9752-f2c3225cfecb",
+        "name": "probe-attach.txt", "size": 58, "type": 1, "mime_type": null,
+        "url": "https://files.kaiten.ru/48c405aa-a7a3-455e-9752-f2c3225cfecb.txt",
+        "external": false, "deleted": false, "author_id": 1068514,
+        "created": "2026-07-16T19:00:00.000Z"
+    }"#;
+
+    /// Shape B (issue #12, newer storage, `type` 11): UUID in `id`, string
+    /// `size`, host-root-relative `url` under /api/v1.
+    const NEWER: &str = r#"{
+        "id": "6a8e66af-0000-0000-0000-000000000000", "name": "report.xlsx",
+        "size": "58818", "mime_type": "application/vnd.ms-excel",
+        "author_uid": "51b4f5a0-0000-0000-0000-000000000000",
+        "card_uid": "0ca503b2-0000-0000-0000-000000000000", "entity_type": "card",
+        "created": "2026-08-10T07:26:08.653Z", "resizes": [], "card_cover": false,
+        "deleted": false, "type": 11,
+        "url": "/api/v1/cards/0ca503b2-0000-0000-0000-000000000000/files/6a8e66af-0000-0000-0000-000000000000",
+        "card_id": 12345678
+    }"#;
+
+    fn file(json: &str) -> CardFile {
+        serde_json::from_str(json).unwrap()
+    }
+
+    #[test]
+    fn card_file_classic_shape_keeps_numeric_id() {
+        let f = file(CLASSIC);
+        assert_eq!(f.id, 61_256_602);
+        assert_eq!(f.size, Some(58));
+        assert_eq!(f.file_type, Some(1));
+        assert_eq!(f.name, "probe-attach.txt");
+        assert!(
+            f.url
+                .as_deref()
+                .unwrap()
+                .starts_with("https://files.kaiten.ru/")
+        );
+    }
+
+    #[test]
+    fn card_file_uuid_id_becomes_zero_and_string_size_parses() {
+        let f = file(NEWER);
+        assert_eq!(f.id, 0, "a UUID cannot be a u64: documented sentinel");
+        assert_eq!(f.size, Some(58_818));
+        assert_eq!(f.file_type, Some(11));
+        assert_eq!(f.mime_type.as_deref(), Some("application/vnd.ms-excel"));
+        assert!(f.url.as_deref().unwrap().starts_with("/api/v1/cards/"));
+    }
+
+    #[test]
+    fn card_file_numeric_string_id_parses() {
+        let f = file(r#"{"id": "123", "name": "n"}"#);
+        assert_eq!(f.id, 123);
+    }
+
+    #[test]
+    fn card_file_size_null_missing_or_garbage_is_none() {
+        assert_eq!(file(r#"{"id": 1, "name": "n", "size": null}"#).size, None);
+        assert_eq!(file(r#"{"id": 1, "name": "n"}"#).size, None);
+        assert_eq!(file(r#"{"id": 1, "name": "n", "size": "lots"}"#).size, None);
+    }
+
+    #[test]
+    fn card_file_missing_id_is_error() {
+        assert!(serde_json::from_str::<CardFile>(r#"{"name": "n"}"#).is_err());
+    }
+
+    /// Serialize output is part of the CLI's `--json` contract: no new keys,
+    /// `file_type` still written as `type`.
+    #[test]
+    fn card_file_serializes_the_same_keys_as_before() {
+        let value = serde_json::to_value(file(CLASSIC)).unwrap();
+        let mut keys: Vec<&str> = value
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        keys.sort_unstable();
+        assert_eq!(
+            keys,
+            [
+                "author_id",
+                "created",
+                "deleted",
+                "external",
+                "id",
+                "mime_type",
+                "name",
+                "size",
+                "type",
+                "url"
+            ]
+        );
+        assert_eq!(value["type"], 1);
+    }
+
+    #[test]
+    fn card_with_mixed_files_parses() {
+        let json = format!(r#"{{"id": 1, "title": "t", "files": [{CLASSIC}, {NEWER}]}}"#);
+        let card: Card = serde_json::from_str(&json).unwrap();
+        assert_eq!(card.files.len(), 2);
+        assert_eq!(card.files[0].id, 61_256_602);
+        assert_eq!(card.files[1].id, 0);
+    }
+
+    #[test]
+    fn file_ref_from_str_display_roundtrip() {
+        assert_eq!("123".parse::<FileRef>().unwrap(), FileRef::Id(123));
+        assert_eq!(" 42 ".parse::<FileRef>().unwrap(), FileRef::Id(42));
+        let uid = "6a8e66af-0000-0000-0000-000000000000";
+        assert_eq!(uid.parse::<FileRef>().unwrap(), FileRef::Uid(uid.into()));
+        assert_eq!(FileRef::Id(123).to_string(), "123");
+        assert_eq!(FileRef::Uid(uid.into()).to_string(), uid);
+    }
+
+    #[test]
+    fn file_ref_from_card_file_uses_url_uuid_when_id_is_zero() {
+        assert_eq!(FileRef::from(&file(CLASSIC)), FileRef::Id(61_256_602));
+        assert_eq!(
+            FileRef::from(&file(NEWER)),
+            FileRef::Uid("6a8e66af-0000-0000-0000-000000000000".into())
+        );
+        let orphan = file(r#"{"id": "x-y", "name": "n"}"#);
+        assert_eq!(FileRef::from(&orphan), FileRef::Id(0));
+    }
+
+    #[test]
+    fn file_ref_matches_by_id_or_uid_and_zero_never_matches() {
+        let classic = file(CLASSIC);
+        let newer = file(NEWER);
+        assert!(FileRef::Id(61_256_602).matches(&classic));
+        assert!(!FileRef::Id(61_256_602).matches(&newer));
+        assert!(FileRef::Uid("6A8E66AF-0000-0000-0000-000000000000".into()).matches(&newer));
+        assert!(!FileRef::Uid("6a8e66af-0000-0000-0000-000000000000".into()).matches(&classic));
+        assert!(
+            !FileRef::Id(0).matches(&newer),
+            "0 is a sentinel, not an id"
+        );
+    }
 }
