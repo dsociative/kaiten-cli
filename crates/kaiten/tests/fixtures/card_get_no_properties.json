@@ -97,7 +97,7 @@
       ]
     }
   ],
-  "properties": null,
+  "properties": {},
   "card_permissions": {
     "read": true,
     "update": true
