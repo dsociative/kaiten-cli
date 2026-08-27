@@ -80,7 +80,7 @@ async fn card_file_list_prints_table() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn card_file_list_json_prints_raw_files() {
+async fn card_file_list_json_prints_raw_files_plus_uid() {
     let api = MockServer::start().await;
     let storage = MockServer::start().await;
     mock_card(&api, &storage).await;
@@ -108,7 +108,7 @@ async fn card_file_get_output_with_missing_parent_names_the_path() {
     let api = MockServer::start().await;
     let storage = MockServer::start().await;
     mock_card(&api, &storage).await;
-    mock_classic_download(&storage, 1).await;
+    mock_classic_download(&storage, 0).await; // refused before any download
     let tmp = tempfile::tempdir().unwrap();
 
     kaiten(tmp.path(), &api.uri(), tmp.path())
@@ -124,7 +124,8 @@ async fn card_file_get_output_with_missing_parent_names_the_path() {
         .assert()
         .failure()
         .code(1)
-        .stderr(predicate::str::contains("missing/dir/x.txt"));
+        .stderr(predicate::str::contains("missing/dir"));
+    assert!(storage.received_requests().await.unwrap().is_empty());
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -187,12 +188,7 @@ async fn card_file_get_saves_original_name_in_cwd() {
         .stdout(predicate::str::contains(
             "saved probe-attach.txt (15 bytes) to ",
         ))
-        .stdout(predicate::str::contains(
-            cwd.path()
-                .join("probe-attach.txt")
-                .to_string_lossy()
-                .as_ref(),
-        ));
+        .stdout(predicate::str::contains("/probe-attach.txt"));
     assert_eq!(
         std::fs::read_to_string(cwd.path().join("probe-attach.txt")).unwrap(),
         "attachment body"
@@ -348,11 +344,9 @@ async fn card_file_get_json_prints_saved_descriptor() {
     assert_eq!(value["name"], "probe-attach.txt");
     assert_eq!(value["size"], 15);
     assert_eq!(value["mime_type"], "text/plain");
-    assert!(
-        value["path"]
-            .as_str()
-            .unwrap()
-            .ends_with("probe-attach.txt"),
-        "{value}"
-    );
+    // absolute, and it is where the bytes actually are (macOS temp dirs are
+    // symlinked, so read through the reported path, not the tempdir)
+    let path = std::path::Path::new(value["path"].as_str().unwrap());
+    assert!(path.is_absolute(), "{value}");
+    assert_eq!(std::fs::read_to_string(path).unwrap(), "attachment body");
 }

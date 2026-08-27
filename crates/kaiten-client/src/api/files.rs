@@ -44,8 +44,12 @@ impl Files<'_> {
     /// parent directories are not created).
     pub async fn download_to(&self, file: &CardFile, path: &Path) -> Result<()> {
         let bytes = self.download(file).await?;
-        tokio::fs::write(path, bytes).await?;
-        Ok(())
+        tokio::fs::write(path, bytes).await.map_err(|e| {
+            KaitenError::Io(std::io::Error::new(
+                e.kind(),
+                format!("{}: {e}", path.display()),
+            ))
+        })
     }
 
     /// PUT /cards/{card_id}/files — multipart upload, binary field `file`.

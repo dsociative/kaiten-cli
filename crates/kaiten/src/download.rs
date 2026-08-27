@@ -64,17 +64,34 @@ pub(crate) fn target_path(
 ) -> Result<PathBuf, CliError> {
     match requested {
         Some(p) if p.is_dir() => Ok(p.join(name)),
-        Some(p) if p.as_os_str().to_string_lossy().ends_with(['/', '\\']) => Err(
-            CliError::InvalidArg(format!("directory {} does not exist", p.display())),
-        ),
+        Some(p) if p.as_os_str().to_string_lossy().ends_with(['/', '\\']) => {
+            let shown = p.display();
+            let trimmed = p.as_os_str().to_string_lossy();
+            if Path::new(trimmed.trim_end_matches(['/', '\\'])).exists() {
+                Err(CliError::InvalidArg(format!("{shown} is not a directory")))
+            } else {
+                Err(CliError::InvalidArg(format!(
+                    "directory {shown} does not exist"
+                )))
+            }
+        }
         Some(p) => Ok(p.to_path_buf()),
         None => Ok(default_dir.join(name)),
     }
 }
 
-/// Refuse to clobber an existing file unless `force`; `hint` names the
+/// Refuse, before anything is downloaded, a target whose parent directory
+/// does not exist, and an existing file unless `force`; `hint` names the
 /// caller's override (`--force`, `overwrite=true`).
 pub(crate) fn ensure_writable(path: &Path, force: bool, hint: &str) -> Result<(), CliError> {
+    if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty())
+        && !parent.is_dir()
+    {
+        return Err(CliError::InvalidArg(format!(
+            "directory {} does not exist",
+            parent.display()
+        )));
+    }
     if path.exists() && !force {
         return Err(CliError::InvalidArg(format!(
             "{} already exists; pass {hint} to overwrite",
@@ -93,7 +110,7 @@ pub(crate) async fn save(
     target: &Path,
 ) -> Result<SavedFile, CliError> {
     let bytes = client.files().download(file).await?;
-    std::fs::write(target, &bytes).map_err(|e| {
+    tokio::fs::write(target, &bytes).await.map_err(|e| {
         CliError::Io(std::io::Error::new(
             e.kind(),
             format!("cannot write {}: {e}", target.display()),
@@ -231,6 +248,30 @@ mod tests {
             .to_string();
         assert!(err.contains("does not exist"), "{err}");
         assert!(err.contains("nodir"), "{err}");
+    }
+
+    /// A missing parent directory is refused before any download, naming it.
+    #[test]
+    fn ensure_writable_refuses_a_missing_parent_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("missing").join("x.txt");
+        let err = ensure_writable(&path, false, "--force")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("does not exist"), "{err}");
+        assert!(err.contains("missing"), "{err}");
+    }
+
+    #[test]
+    fn target_path_reports_an_existing_file_named_as_a_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("plain");
+        std::fs::write(&file, "x").unwrap();
+        let as_dir = format!("{}/", file.display());
+        let err = target_path(Some(Path::new(&as_dir)), Path::new("/default"), "a.txt")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("is not a directory"), "{err}");
     }
 
     #[test]

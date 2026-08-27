@@ -658,6 +658,8 @@ mod tests {
         assert!(!FileRef::Id(61_256_602).matches(&newer));
         assert!(FileRef::Uid("6A8E66AF-0000-0000-0000-000000000000".into()).matches(&newer));
         assert!(!FileRef::Uid("6a8e66af-0000-0000-0000-000000000000".into()).matches(&classic));
+        // a classic url ends in `<uuid>.ext`: the uid is matched without the extension
+        assert!(FileRef::Uid("48c405aa-a7a3-455e-9752-f2c3225cfecb".into()).matches(&classic));
         assert!(
             !FileRef::Id(0).matches(&newer),
             "0 is a sentinel, not an id"
