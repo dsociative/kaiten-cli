@@ -1,4 +1,4 @@
-use kaiten_client::KaitenClient;
+use kaiten_client::{FileRef, KaitenClient};
 use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -602,5 +602,44 @@ async fn download_json_attachment_behind_a_same_origin_redirect_is_returned_verb
     assert_eq!(
         client.files().download(&file).await.unwrap(),
         attachment.as_bytes()
+    );
+}
+
+/// `uid` is the file's UUID on both storages: the separate `uid` key on the
+/// classic one, the string `id` on the newer one (where `uid` is null).
+#[tokio::test]
+async fn list_exposes_the_file_uid_on_both_storages() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/cards/67089469"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(CARD_GET_FULL, "application/json"))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/cards/64533247"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_raw(CARD_GET_FILES_TYPE11, "application/json"),
+        )
+        .mount(&server)
+        .await;
+    let client = KaitenClient::new(&server.uri(), "test-token").unwrap();
+
+    let classic = client.files().list(67_089_469).await.unwrap();
+    assert_eq!(classic[0].id, 62_769_658);
+    assert_eq!(
+        classic[0].uid.as_deref(),
+        Some("252215b3-9303-485a-a800-859497aa942a")
+    );
+    assert_eq!(FileRef::from(&classic[0]), FileRef::Id(62_769_658));
+
+    let newer = client.files().list(64_533_247).await.unwrap();
+    assert_eq!(newer[0].id, 0);
+    assert_eq!(
+        newer[0].uid.as_deref(),
+        Some("08b5876d-0000-0000-0000-000000000000")
+    );
+    assert_eq!(
+        FileRef::from(&newer[0]),
+        FileRef::Uid("08b5876d-0000-0000-0000-000000000000".into())
     );
 }

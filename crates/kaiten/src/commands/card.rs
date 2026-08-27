@@ -1015,9 +1015,7 @@ async fn run_file_list(client: &KaitenClient, json: bool, card: &str) -> Result<
     let card_id = parse_card_ref(card)?;
     let files = client.files().list(card_id).await?;
     if json {
-        let entries: Vec<download::FileListEntry<'_>> =
-            files.iter().map(download::FileListEntry::from).collect();
-        return output::print_json(&entries);
+        return output::print_json(&files);
     }
     if files.is_empty() {
         println!("no files on card {card_id}");

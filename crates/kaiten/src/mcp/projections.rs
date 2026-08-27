@@ -167,8 +167,8 @@ impl From<&Blocker> for BlockerView {
 pub struct FileView {
     /// Numeric id; 0 when the storage identifies the file only by `uid`.
     pub id: u64,
-    /// UUID of a file on the newer storage (only when `id` is 0) — pass
-    /// either to download_file.
+    /// The file's UUID; newer-storage files (`id` 0) are addressed by it.
+    /// download_file accepts either `id` or `uid`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub uid: Option<String>,
     pub name: String,
@@ -185,13 +185,9 @@ pub struct FileView {
 
 impl From<&CardFile> for FileView {
     fn from(f: &CardFile) -> Self {
-        let uid = match kaiten_client::FileRef::from(f) {
-            kaiten_client::FileRef::Uid(uid) => Some(uid),
-            kaiten_client::FileRef::Id(_) => None,
-        };
         Self {
             id: f.id,
-            uid,
+            uid: f.uid.clone(),
             name: f.name.clone(),
             url: f.url.clone(),
             size: f.size,

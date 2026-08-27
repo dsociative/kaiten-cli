@@ -180,6 +180,10 @@ pub struct Blocker {
 pub struct CardFile {
     /// Numeric id on the classic storage; `0` on the newer storage (see above).
     pub id: u64,
+    /// The file's UUID: the `uid` key on the classic storage, the string `id`
+    /// on the newer one (where `uid` is null). This is what
+    /// [`FileRef::Uid`] carries.
+    pub uid: Option<String>,
     pub name: String,
     #[serde(default)]
     pub url: Option<String>,
@@ -204,6 +208,8 @@ pub struct CardFile {
 #[derive(serde::Deserialize)]
 struct RawCardFile {
     id: de::NumOrStr,
+    #[serde(default)]
+    uid: Option<String>,
     name: String,
     #[serde(default)]
     url: Option<String>,
@@ -225,8 +231,17 @@ struct RawCardFile {
 
 impl From<RawCardFile> for CardFile {
     fn from(raw: RawCardFile) -> Self {
+        // A non-numeric string id is the newer storage's UUID.
+        let (id, id_as_uid) = match raw.id {
+            de::NumOrStr::Num(n) => (n, None),
+            de::NumOrStr::Str(s) => match s.trim().parse::<u64>() {
+                Ok(n) => (n, None),
+                Err(_) => (0, Some(s)),
+            },
+        };
         Self {
-            id: raw.id.into_u64().unwrap_or(0),
+            id,
+            uid: raw.uid.or(id_as_uid),
             name: raw.name,
             url: raw.url,
             size: raw.size,
@@ -330,9 +345,14 @@ impl FileRef {
         match self {
             FileRef::Id(0) => false,
             FileRef::Id(id) => file.id == *id,
-            FileRef::Uid(uid) => file
-                .uuid_from_url()
-                .is_some_and(|u| u.eq_ignore_ascii_case(uid)),
+            FileRef::Uid(uid) => {
+                file.uid
+                    .as_deref()
+                    .is_some_and(|u| u.eq_ignore_ascii_case(uid))
+                    || file
+                        .uuid_from_url()
+                        .is_some_and(|u| u.eq_ignore_ascii_case(uid))
+            }
         }
     }
 }
@@ -341,6 +361,9 @@ impl From<&CardFile> for FileRef {
     fn from(file: &CardFile) -> Self {
         if file.id != 0 {
             return FileRef::Id(file.id);
+        }
+        if let Some(uid) = file.uid.as_deref().filter(|u| !u.is_empty()) {
+            return FileRef::Uid(uid.to_owned());
         }
         match file.uuid_from_url() {
             Some(uid) => FileRef::Uid(uid.to_owned()),
@@ -449,6 +472,10 @@ pub struct Card {
     pub blockers: Vec<Blocker>,
     #[serde(default)]
     pub files: Vec<CardFile>,
+    /// `Links (common links)`; embedded by `GET /cards/{id}` and, for cards
+    /// that have any, by `GET /cards` too.
+    #[serde(default)]
+    pub external_links: Vec<ExternalLink>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -537,10 +564,9 @@ pub struct SelectValue {
 }
 
 /// An external link of a card (`Links (common links)` in Kaiten): a URL
-/// with an optional description. `GET /cards/{id}` embeds them under
-/// `external_links` as well, but [`Card`] does not model that field yet
-/// (adding one would be a breaking change), so they are read through
-/// [`crate::api::external_links::ExternalLinks::list`].
+/// with an optional description. `GET /cards/{id}` embeds them as
+/// [`Card::external_links`]; the dedicated endpoint behind
+/// [`crate::api::external_links::ExternalLinks`] manages them.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[non_exhaustive]
 pub struct ExternalLink {
@@ -631,8 +657,10 @@ mod tests {
 
     /// Serialize output is part of the CLI's `--json` contract: no new keys,
     /// `file_type` still written as `type`.
+    /// The serialized shape is what `card file list --json` prints; `uid`
+    /// joined the key set when the model started carrying it.
     #[test]
-    fn card_file_serializes_the_same_keys_as_before() {
+    fn card_file_serializes_the_model_keys() {
         let value = serde_json::to_value(file(CLASSIC)).unwrap();
         let mut keys: Vec<&str> = value
             .as_object()
@@ -653,6 +681,7 @@ mod tests {
                 "name",
                 "size",
                 "type",
+                "uid",
                 "url"
             ]
         );
@@ -679,13 +708,18 @@ mod tests {
     }
 
     #[test]
-    fn file_ref_from_card_file_uses_url_uuid_when_id_is_zero() {
+    fn file_ref_from_card_file_prefers_id_then_uid_then_url_uuid() {
         assert_eq!(FileRef::from(&file(CLASSIC)), FileRef::Id(61_256_602));
         assert_eq!(
             FileRef::from(&file(NEWER)),
             FileRef::Uid("6a8e66af-0000-0000-0000-000000000000".into())
         );
-        let orphan = file(r#"{"id": "x-y", "name": "n"}"#);
+        // a non-numeric string id is the uid even without a url
+        let no_url = file(r#"{"id": "x-y", "name": "n"}"#);
+        assert_eq!(no_url.uid.as_deref(), Some("x-y"));
+        assert_eq!(FileRef::from(&no_url), FileRef::Uid("x-y".into()));
+        // nothing to address the file by → the 0 sentinel
+        let orphan = file(r#"{"id": 0, "name": "n"}"#);
         assert_eq!(FileRef::from(&orphan), FileRef::Id(0));
     }
 
@@ -699,6 +733,13 @@ mod tests {
         assert!(!FileRef::Uid("6a8e66af-0000-0000-0000-000000000000".into()).matches(&classic));
         // a classic url ends in `<uuid>.ext`: the uid is matched without the extension
         assert!(FileRef::Uid("48c405aa-a7a3-455e-9752-f2c3225cfecb".into()).matches(&classic));
+        // the wire `uid` (which need not equal the url's uuid) matches as well
+        let with_uid = file(
+            r#"{"id": 5, "uid": "252215b3-9303-485a-a800-859497aa942a", "name": "n",
+                "url": "https://files.kaiten.ru/d4586f6a-3e00-4253-aac7-a6f6c4190f40.txt"}"#,
+        );
+        assert!(FileRef::Uid("252215B3-9303-485A-A800-859497AA942A".into()).matches(&with_uid));
+        assert!(FileRef::Uid("d4586f6a-3e00-4253-aac7-a6f6c4190f40".into()).matches(&with_uid));
         assert!(
             !FileRef::Id(0).matches(&newer),
             "0 is a sentinel, not an id"

@@ -138,6 +138,16 @@ async fn get_parses_full_card() {
     assert_eq!(blocker.reason.as_deref(), Some("waiting for child card"));
     assert_eq!(blocker.blocker_card_id, Some(67_089_310));
     assert_eq!(blocker.released, Some(false));
+    assert_eq!(card.external_links.len(), 1);
+    assert_eq!(card.external_links[0].id, 21_181_168);
+    assert_eq!(
+        card.external_links[0].url,
+        "https://example.com/fixture-link"
+    );
+    assert_eq!(
+        card.external_links[0].description.as_deref(),
+        Some("fixture link")
+    );
     assert_eq!(card.files.len(), 1);
     assert_eq!(card.files[0].name, "probe-attach.txt");
     assert_eq!(
