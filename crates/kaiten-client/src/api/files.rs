@@ -8,9 +8,10 @@ use crate::models::{CardFile, FileRef};
 ///
 /// SECURITY: Kaiten's classic storage serves uploaded files from a public
 /// (unguessable) URL without authentication — never attach secrets. The
-/// newer storage serves files through an authenticated API path that
-/// redirects to storage; [`Files::download`] sends the API token only to
-/// the API origin, never to a file or storage host.
+/// newer storage answers its authenticated API path with the file's
+/// metadata, whose `url` is a signed storage link valid for seconds;
+/// [`Files::download`] sends the API token only to the API origin and
+/// fetches the signed link without credentials.
 pub struct Files<'a> {
     pub(crate) client: &'a KaitenClient,
 }
@@ -24,10 +25,13 @@ impl Files<'_> {
     }
 
     /// Download an attachment's content. An absolute `url` (classic storage)
-    /// is fetched as is; a host-root-relative one (newer storage) is resolved
-    /// against the API origin. The token goes only to the API origin — never
-    /// to the public file host, nor to a storage host reached through a
-    /// redirect. The whole body is held in memory, as with [`Files::attach`].
+    /// is fetched as is. A host-root-relative one (newer storage) is resolved
+    /// against the API origin, where the API answers with the file's
+    /// metadata rather than its bytes: the `url` in it is a signed storage
+    /// link that expires within seconds, fetched immediately and without
+    /// credentials. The token goes only to the API origin — never to the
+    /// public file host nor to storage. The whole body is held in memory, as
+    /// with [`Files::attach`].
     pub async fn download(&self, file: &CardFile) -> Result<Vec<u8>> {
         let raw = file.url.as_deref().ok_or_else(|| {
             invalid_input(format!(
@@ -37,7 +41,32 @@ impl Files<'_> {
             ))
         })?;
         let url = resolve_file_url(self.client.base_url(), raw)?;
-        self.client.get_bytes(&url).await
+        let (content_type, bytes) = self.client.get_bytes(&url).await?;
+        let is_metadata = url.origin() == self.client.base_url().origin()
+            && content_type
+                .as_deref()
+                .is_some_and(|ct| ct.starts_with("application/json"));
+        if !is_metadata {
+            return Ok(bytes);
+        }
+        let text = String::from_utf8(bytes).map_err(|e| {
+            invalid_input(format!(
+                "file metadata for `{}` is not UTF-8: {e}",
+                file.name
+            ))
+        })?;
+        let location: FileLocation = KaitenClient::decode(&text)?;
+        let signed = location.url.ok_or_else(|| {
+            invalid_input(format!(
+                "file metadata for `{}` ({}) has no download url",
+                file.name,
+                FileRef::from(file)
+            ))
+        })?;
+        let signed = url::Url::parse(&signed)
+            .map_err(|e| invalid_input(format!("storage url `{signed}` is not valid: {e}")))?;
+        let (_, bytes) = self.client.get_bytes(&signed).await?;
+        Ok(bytes)
     }
 
     /// [`Files::download`] straight into `path` (created or truncated;
@@ -77,6 +106,14 @@ impl Files<'_> {
             )
             .await
     }
+}
+
+/// What the newer storage's API path returns for a file: its metadata, of
+/// which only the signed storage `url` matters here.
+#[derive(serde::Deserialize)]
+struct FileLocation {
+    #[serde(default)]
+    url: Option<String>,
 }
 
 /// Absolute URLs pass through; a path is resolved against the API **origin**

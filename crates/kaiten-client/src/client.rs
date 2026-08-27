@@ -252,7 +252,8 @@ impl KaitenClient {
         }
     }
 
-    /// GET `url` and return the body bytes (attachment downloads).
+    /// GET `url` and return the content type and body bytes (attachment
+    /// downloads).
     ///
     /// The bearer token is sent only when `url` is on the API origin — never
     /// to the public file host, nor to a storage host reached through a
@@ -261,7 +262,7 @@ impl KaitenClient {
     /// downgrade would keep it, which only Kaiten itself could trigger).
     /// Retry and tracing mirror `send_with_retry`; the body is binary and
     /// never traced; errors go through `download_error`.
-    pub(crate) async fn get_bytes(&self, url: &url::Url) -> Result<Vec<u8>> {
+    pub(crate) async fn get_bytes(&self, url: &url::Url) -> Result<(Option<String>, Vec<u8>)> {
         let with_auth = url.origin() == self.base_url.origin();
         let mut retries = 0u32;
         loop {
@@ -300,7 +301,12 @@ impl KaitenClient {
                 let text = resp.text().await?;
                 return Err(download_error(status, text));
             }
-            return Ok(resp.bytes().await?.to_vec());
+            let content_type = resp
+                .headers()
+                .get(reqwest::header::CONTENT_TYPE)
+                .and_then(|v| v.to_str().ok())
+                .map(str::to_owned);
+            return Ok((content_type, resp.bytes().await?.to_vec()));
         }
     }
 

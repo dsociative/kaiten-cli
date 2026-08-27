@@ -2092,8 +2092,10 @@ mod tests {
         );
     }
 
+    /// Newer storage: the API path (bearer) answers with metadata whose `url`
+    /// is a signed storage link; the bytes come from there without the token.
     #[tokio::test]
-    async fn download_file_by_uid_resolves_relative_url_on_api_host_with_bearer() {
+    async fn download_file_by_uid_follows_the_signed_url_from_the_metadata() {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/cards/5"))
@@ -2109,6 +2111,18 @@ mod tests {
                 "/api/v1/cards/cu/files/6a8e66af-0000-0000-0000-000000000000",
             ))
             .and(header("Authorization", "Bearer test-token"))
+            .respond_with(ResponseTemplate::new(200).set_body_raw(
+                format!(
+                    r#"{{"id": "6a8e66af-0000-0000-0000-000000000000", "url": "{}/signed/blob"}}"#,
+                    server.uri()
+                ),
+                "application/json",
+            ))
+            .expect(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/signed/blob"))
             .respond_with(ResponseTemplate::new(200).set_body_bytes(b"xls".to_vec()))
             .expect(1)
             .mount(&server)

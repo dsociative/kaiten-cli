@@ -1,0 +1,13 @@
+{
+  "id": "08b5876d-0000-0000-0000-000000000000",
+  "name": "report.html",
+  "size": "33055",
+  "mime_type": "text/html",
+  "entity_type": "card",
+  "created": "2026-05-08T15:56:33.382Z",
+  "updated": "2026-05-08T15:56:33.382Z",
+  "card_uid": "14dc3064-0000-0000-0000-000000000000",
+  "author_uid": "51b4f5a0-0000-0000-0000-000000000000",
+  "card_cover": false,
+  "url": "https://storage.example/bucket/08b5876d-0000-0000-0000-000000000000?X-Amz-Signature=REDACTED"
+}

@@ -1,24 +1,26 @@
 {
-  "id": 12345678,
-  "uid": "0ca503b2-0000-0000-0000-000000000000",
-  "title": "report card",
+  "id": 64533247,
+  "uid": "14dc3064-0000-0000-0000-000000000000",
+  "title": "card with a newer-storage attachment",
   "board_id": 1826109,
   "files": [
     {
-      "id": "6a8e66af-0000-0000-0000-000000000000",
-      "name": "report.xlsx",
-      "size": "58818",
-      "mime_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       "author_uid": "51b4f5a0-0000-0000-0000-000000000000",
-      "card_uid": "0ca503b2-0000-0000-0000-000000000000",
-      "entity_type": "card",
-      "created": "2026-08-10T07:26:08.653Z",
-      "resizes": [],
       "card_cover": false,
+      "card_id": 64533247,
+      "card_uid": "14dc3064-0000-0000-0000-000000000000",
+      "company_uid": "cde617a8-0000-0000-0000-000000000000",
+      "created": "2026-05-08T15:56:33.382Z",
       "deleted": false,
+      "entity_type": "card",
+      "id": "08b5876d-0000-0000-0000-000000000000",
+      "mime_type": "text/html",
+      "name": "report.html",
+      "resizes": [],
+      "size": "33055",
       "type": 11,
-      "url": "/api/v1/cards/0ca503b2-0000-0000-0000-000000000000/files/6a8e66af-0000-0000-0000-000000000000",
-      "card_id": 12345678
+      "updated": "2026-05-08T15:56:33.382Z",
+      "url": "/api/v1/cards/14dc3064-0000-0000-0000-000000000000/files/08b5876d-0000-0000-0000-000000000000"
     }
   ]
 }
