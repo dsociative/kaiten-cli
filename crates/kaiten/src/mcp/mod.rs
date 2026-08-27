@@ -43,14 +43,25 @@ fn error_result(err: &KaitenError) -> CallToolResult {
 /// Validate the optional `properties` argument of create_card/update_card
 /// (issue #15): a JSON string holding an object is unwrapped, anything that
 /// is not an object is a tool-level error — the API used to ignore it and
-/// report success.
+/// report success. The message is user-facing, see `try_args!`.
 fn coerce_properties(
     value: Option<serde_json::Value>,
-) -> Result<Option<serde_json::Value>, CallToolResult> {
+) -> Result<Option<serde_json::Value>, String> {
     value
         .map(properties::coerce_object)
         .transpose()
-        .map_err(|msg| CallToolResult::error(vec![ContentBlock::text(format!("properties {msg}"))]))
+        .map_err(|msg| format!("properties {msg}"))
+}
+
+/// `try_api!` for this crate's own argument validation: the `Err` is already
+/// a user-facing message, returned as a tool-level error before any API call.
+macro_rules! try_args {
+    ($e:expr) => {
+        match $e {
+            Ok(v) => v,
+            Err(msg) => return Ok(CallToolResult::error(vec![ContentBlock::text(msg)])),
+        }
+    };
 }
 
 /// Unwrap a `Result<T, KaitenError>` produced by a client call inside a tool
@@ -186,11 +197,11 @@ pub struct CreateCardParams {
     /// Mark the card as ASAP
     pub asap: Option<bool>,
     /// Custom property values as a JSON OBJECT keyed as "id_{property_id}"
-    /// (see list_custom_properties); a JSON string holding such an object is
-    /// accepted too. Formats: select/multi-select = ARRAY of option ids from
-    /// list_property_select_values, e.g. {"id_612634": [18929916]};
-    /// string/number/url = plain value; date = {"date": "2026-07-16",
-    /// "time": "19:00", "tzOffset": 180}; null clears
+    /// (see list_custom_properties). Formats: select/multi-select = ARRAY of
+    /// option ids from list_property_select_values, e.g. {"id_612634":
+    /// [18929916]}; string/number/url = plain value; date = {"date":
+    /// "2026-07-16", "time": "19:00", "tzOffset": 180}; a property value of
+    /// null clears that property
     #[schemars(with = "Option<serde_json::Map<String, serde_json::Value>>")]
     pub properties: Option<serde_json::Value>,
 }
@@ -209,11 +220,11 @@ pub struct UpdateCardParams {
     /// Set or clear the ASAP flag
     pub asap: Option<bool>,
     /// Custom property values as a JSON OBJECT keyed as "id_{property_id}"
-    /// (see list_custom_properties); a JSON string holding such an object is
-    /// accepted too. Formats: select/multi-select = ARRAY of option ids from
-    /// list_property_select_values, e.g. {"id_612634": [18929916]};
-    /// string/number/url = plain value; date = {"date": "2026-07-16",
-    /// "time": "19:00", "tzOffset": 180}; null clears
+    /// (see list_custom_properties). Formats: select/multi-select = ARRAY of
+    /// option ids from list_property_select_values, e.g. {"id_612634":
+    /// [18929916]}; string/number/url = plain value; date = {"date":
+    /// "2026-07-16", "time": "19:00", "tzOffset": 180}; a property value of
+    /// null clears that property
     #[schemars(with = "Option<serde_json::Map<String, serde_json::Value>>")]
     pub properties: Option<serde_json::Value>,
 }
@@ -620,10 +631,7 @@ impl KaitenMcp {
         &self,
         Parameters(p): Parameters<CreateCardParams>,
     ) -> Result<CallToolResult, McpError> {
-        let properties = match coerce_properties(p.properties) {
-            Ok(v) => v,
-            Err(e) => return Ok(e),
-        };
+        let properties = try_args!(coerce_properties(p.properties));
         let req = CreateCard {
             board_id: p.board_id,
             title: p.title,
@@ -645,10 +653,7 @@ impl KaitenMcp {
         &self,
         Parameters(p): Parameters<UpdateCardParams>,
     ) -> Result<CallToolResult, McpError> {
-        let properties = match coerce_properties(p.properties) {
-            Ok(v) => v,
-            Err(e) => return Ok(e),
-        };
+        let properties = try_args!(coerce_properties(p.properties));
         let req = UpdateCard {
             title: p.title,
             description: p.description,
@@ -1229,6 +1234,8 @@ mod tests {
     const CARD_CREATE_FIXTURE: &str = include_str!("../../tests/fixtures/mcp_card_create.json");
     const USER_CURRENT_FIXTURE: &str = include_str!("../../tests/fixtures/mcp_user_current.json");
     const CARD_FULL_FIXTURE: &str = include_str!("../../tests/fixtures/mcp_card_full.json");
+    const CARD_WITH_PROPERTIES_FIXTURE: &str =
+        include_str!("../../tests/fixtures/card_get_full.json");
 
     fn mcp_for(server: &MockServer) -> KaitenMcp {
         let client = KaitenClient::new(&server.uri(), "test-token").unwrap();
@@ -1972,9 +1979,6 @@ mod tests {
         expected.sort_unstable();
         assert_eq!(names, expected);
     }
-    const CARD_WITH_PROPERTIES_FIXTURE: &str =
-        include_str!("../../tests/fixtures/card_get_full.json");
-
     fn update_params(properties: serde_json::Value) -> super::UpdateCardParams {
         super::UpdateCardParams {
             card_id: 67_089_469,
@@ -2038,6 +2042,37 @@ mod tests {
             server.received_requests().await.unwrap().is_empty(),
             "invalid properties must never reach the API"
         );
+    }
+
+    #[tokio::test]
+    async fn create_card_parses_stringified_properties_object() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/cards"))
+            .and(wiremock::matchers::body_partial_json(serde_json::json!({
+                "board_id": 1,
+                "properties": { "id_612634": [18_929_916] }
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_string(CARD_CREATE_FIXTURE))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let mcp = mcp_for(&server);
+        let result = mcp
+            .create_card(Parameters(CreateCardParams {
+                board_id: 1,
+                title: "t".into(),
+                column_id: None,
+                lane_id: None,
+                description: None,
+                type_id: None,
+                asap: None,
+                properties: Some(serde_json::json!("{\"id_612634\": [18929916]}")),
+            }))
+            .await
+            .unwrap();
+        assert_ne!(result.is_error, Some(true), "{}", tool_text(&result));
     }
 
     #[tokio::test]

@@ -422,6 +422,7 @@ async fn mcp_stdio_tools_call_legacy_wire_contract() {
         tool_text(&bad_props).starts_with("properties "),
         "{bad_props}"
     );
+    assert_legacy_shape(&bad_props["result"], "tools/call (bad properties)");
     assert!(server.received_requests().await.unwrap().is_empty());
 
     // Unknown tool: JSON-RPC "invalid params" (-32602), as with rmcp 2.

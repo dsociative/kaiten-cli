@@ -351,3 +351,17 @@ async fn edit_accepts_stringified_properties_object() {
         .assert()
         .success();
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn edit_rejects_null_properties_json_without_any_request() {
+    let server = MockServer::start().await; // no mocks
+    let tmp = tempfile::tempdir().unwrap();
+
+    kaiten(tmp.path(), &server.uri())
+        .args(["card", "edit", "67089469", "--properties-json", "null"])
+        .assert()
+        .failure()
+        .code(1)
+        .stderr(predicate::str::contains("must be a JSON object"));
+    assert!(server.received_requests().await.unwrap().is_empty());
+}

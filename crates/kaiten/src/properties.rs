@@ -4,15 +4,16 @@
 //! a wrong shape is an error instead of a silent no-op (issue #15).
 
 /// The shape Kaiten expects, used verbatim in error messages.
-pub(crate) const EXAMPLE: &str = r#"{"id_612634": [18929916]}"#;
+const EXAMPLE: &str = r#"{"id_612634": [18929916]}"#;
 
 /// Coerce a `properties` value into the JSON object Kaiten expects.
 ///
 /// - an object passes through unchanged;
 /// - a string is parsed as JSON and must contain an object (agents routinely
 ///   stringify untyped fields — accept that instead of dropping the write);
-/// - `null` passes through (it clears the properties);
-/// - anything else is an error whose message names the expected shape.
+/// - anything else, including a top-level `null` (its API semantics are not
+///   documented; per-property `{"id_N": null}` is how a value is cleared), is
+///   an error whose message names the expected shape.
 ///
 /// The message has no subject: callers prefix it with theirs
 /// (`--properties-json …` / `properties …`).
@@ -24,7 +25,7 @@ pub(crate) fn coerce_object(value: serde_json::Value) -> Result<serde_json::Valu
             })?,
         other => other,
     };
-    if value.is_object() || value.is_null() {
+    if value.is_object() {
         Ok(value)
     } else {
         Err(format!("must be a JSON object like '{EXAMPLE}'"))
@@ -52,9 +53,15 @@ mod tests {
         );
     }
 
+    /// Top-level `null` has no documented meaning on the API (per-property
+    /// `{"id_N": null}` clears a value); it must not slip through as a
+    /// possible "clear everything" (review of #15).
     #[test]
-    fn null_passes_through_to_clear_properties() {
-        assert_eq!(coerce_object(json!(null)).unwrap(), json!(null));
+    fn null_is_rejected_bare_and_stringified() {
+        for value in [json!(null), json!("null")] {
+            let err = coerce_object(value.clone()).unwrap_err();
+            assert!(err.contains("JSON object"), "{value}: {err}");
+        }
     }
 
     #[test]
