@@ -39,7 +39,7 @@ async fn card_list_uses_board_flag_and_default_limit() {
         .success();
     let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
     assert!(stdout.contains("67089469"), "{stdout}");
-    assert!(stdout.contains("urgent bugfix"), "{stdout}");
+    assert!(stdout.contains("Захват мира"), "{stdout}"); // emoji + Cyrillic title survives the table
     insta::assert_snapshot!("card_list", stdout);
 }
 
@@ -213,6 +213,7 @@ async fn card_list_json() {
         .success();
     let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
     let value: serde_json::Value = serde_json::from_str(&stdout).unwrap();
-    assert_eq!(value.as_array().unwrap().len(), 2);
-    assert_eq!(value[1]["asap"], true);
+    assert_eq!(value.as_array().unwrap().len(), 5);
+    assert_eq!(value[0]["asap"], true);
+    assert_eq!(value[1]["archived"], true);
 }

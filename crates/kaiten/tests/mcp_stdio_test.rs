@@ -507,7 +507,7 @@ async fn mcp_stdio_download_file_saves_locally() {
         .mount(&server)
         .await;
     Mock::given(method("GET"))
-        .and(path("/48c405aa-a7a3-455e-9752-f2c3225cfecb.txt"))
+        .and(path("/d4586f6a-3e00-4253-aac7-a6f6c4190f40.txt"))
         .respond_with(ResponseTemplate::new(200).set_body_bytes(b"attachment body".to_vec()))
         .expect(1)
         .mount(&server)
@@ -521,7 +521,7 @@ async fn mcp_stdio_download_file_saves_locally() {
         "download_file",
         &serde_json::json!({
             "card_id": 67_089_469,
-            "file_id": "61256602",
+            "file_id": "62769658",
             "save_path": dir.path().to_string_lossy()
         }),
     );

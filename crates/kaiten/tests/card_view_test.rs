@@ -92,7 +92,7 @@ async fn card_view_with_comments_makes_second_request() {
 async fn card_view_without_properties_hides_block() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
-        .and(path("/cards/67089470"))
+        .and(path("/cards/67089469"))
         .and(header("Authorization", "Bearer test-token"))
         .respond_with(
             ResponseTemplate::new(200).set_body_raw(CARD_NO_PROPERTIES, "application/json"),
@@ -103,10 +103,10 @@ async fn card_view_without_properties_hides_block() {
     let tmp = tempfile::tempdir().unwrap();
 
     kaiten(tmp.path(), &server.uri())
-        .args(["card", "view", "67089470"])
+        .args(["card", "view", "67089469"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("#67089470 test card from cli"))
+        .stdout(predicate::str::contains("#67089469 test card from cli"))
         .stdout(predicate::str::contains("Properties:").not());
 }
 

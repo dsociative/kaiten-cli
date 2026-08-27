@@ -133,8 +133,8 @@ async fn list_takes_files_from_card_get_not_from_files_endpoint() {
     let client = KaitenClient::new(&server.uri(), "test-token").unwrap();
     let files = client.files().list(67_089_469).await.unwrap();
     assert_eq!(files.len(), 1);
-    assert_eq!(files[0].id, 61_256_602);
-    assert_eq!(files[0].size, Some(58));
+    assert_eq!(files[0].id, 62_769_658);
+    assert_eq!(files[0].size, Some(15));
 }
 
 #[tokio::test]
