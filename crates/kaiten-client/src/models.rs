@@ -517,6 +517,25 @@ pub struct SelectValue {
     pub sort_order: Option<f64>,
 }
 
+/// An external link of a card (`Links (common links)` in Kaiten): a URL
+/// with an optional description. `GET /cards/{id}` embeds them under
+/// `external_links` as well, but [`Card`] does not model that field yet
+/// (adding one would be a breaking change), so they are read through
+/// [`crate::api::external_links::ExternalLinks::list`].
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ExternalLink {
+    pub id: u64,
+    #[serde(default)]
+    pub uid: Option<String>,
+    pub url: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub created: Option<String>,
+    #[serde(default)]
+    pub updated: Option<String>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
