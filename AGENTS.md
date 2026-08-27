@@ -37,8 +37,17 @@ rule changes, change it here in the same PR.
 - Live checks run against a Kaiten test account whose credentials live in a gitignored `.env.test` at the repo root (`KAITEN_DOMAIN`, `KAITEN_TOKEN`); ask the owner for them. Never commit or print them.
 - Card 67089469 there is the **frozen fixture card** — the source of the card fixtures; do not add, remove or edit anything on it. Card 69316486 is the playground for mutating checks; clean up after yourself.
 - The test tariff has no time logs, relations (children/parents), blocking or custom properties.
-- Probe the API with `kaiten -vv …` (trace prints request and response bodies on stderr) or `kaiten api GET …` (raw JSON). `--json` on typed commands prints the serialized model and silently drops fields the model does not know — never infer API behaviour from it.
+- Probe and debug with trace logging on — see **Debugging** below; never infer API behaviour from the `--json` output of typed commands.
 - The owner's corporate tracker may be used read-only, and only when the owner says so.
+
+## Debugging
+
+- Always run with tracing when investigating anything that touches the API — it shows the whole exchange at once instead of guessing:
+  - `kaiten -v …` → debug: method, path, status, elapsed, retries;
+  - `kaiten -vv …` → trace: additionally the request body and the **full response body** of every call (stderr; redirect with `2>trace.log` when the output is processed further);
+  - or `RUST_LOG=kaiten=trace,kaiten_client=trace,reqwest=debug kaiten …` when a flag cannot be passed (e.g. the MCP server launched by a client — its logs go to stderr, stdout carries the protocol).
+- `kaiten api GET /path` prints the raw JSON of any endpoint. `--json` on typed commands prints the serialized *model* and silently drops every field the model does not know — it proved that `GET /cards` "does not return external_links" when it did. Read the raw body first, reason about models second.
+- Tests: `cargo test … -- --nocapture` shows the CLI's stderr; wiremock's unmatched-request panic lists what was actually sent.
 
 ## Kaiten API facts worth knowing
 
