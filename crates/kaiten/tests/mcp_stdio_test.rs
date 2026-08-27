@@ -17,7 +17,7 @@ const USER_CURRENT: &str = include_str!("fixtures/mcp_user_current.json");
 
 const READ_TIMEOUT: Duration = Duration::from_secs(20);
 
-const EXPECTED_TOOLS: [&str; 35] = [
+const EXPECTED_TOOLS: [&str; 36] = [
     "current_user",
     "list_spaces",
     "list_boards",
@@ -53,6 +53,7 @@ const EXPECTED_TOOLS: [&str; 35] = [
     "set_card_responsible",
     "add_time_log",
     "list_time_logs",
+    "download_file",
 ];
 
 struct McpProc {
@@ -485,4 +486,51 @@ fn mcp_stdio_harness_reports_child_stderr_when_the_child_dies() {
         message.contains("exited"),
         "panic must say the child exited, got: {message:?}"
     );
+}
+
+/// `download_file` end to end: the tool saves the attachment locally and
+/// returns where; legacy wire shape preserved.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn mcp_stdio_download_file_saves_locally() {
+    let server = MockServer::start().await;
+    let card = include_str!("fixtures/mcp_card_full.json")
+        .replace("https://files.kaiten.ru", &server.uri());
+    Mock::given(method("GET"))
+        .and(path("/cards/67089469"))
+        .and(header("Authorization", "Bearer test-token"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(card, "application/json"))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/48c405aa-a7a3-455e-9752-f2c3225cfecb.txt"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(b"attachment body".to_vec()))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let dir = tempfile::tempdir().unwrap();
+
+    let mut mcp = McpProc::spawn_with_base_url(&server.uri());
+    mcp.initialize("2025-03-26");
+    let saved = mcp.call_tool(
+        3,
+        "download_file",
+        &serde_json::json!({
+            "card_id": 67_089_469,
+            "file_id": "61256602",
+            "save_path": dir.path().to_string_lossy()
+        }),
+    );
+    assert!(saved.get("error").is_none(), "{saved}");
+    assert_ne!(
+        saved["result"]["isError"],
+        serde_json::json!(true),
+        "{saved}"
+    );
+    assert_legacy_shape(&saved["result"], "tools/call (download_file)");
+    let descriptor: serde_json::Value = serde_json::from_str(tool_text(&saved)).unwrap();
+    let path = std::path::PathBuf::from(descriptor["path"].as_str().unwrap());
+    assert_eq!(path, dir.path().join("probe-attach.txt"));
+    assert_eq!(std::fs::read_to_string(path).unwrap(), "attachment body");
+    assert_eq!(descriptor["size"], 15);
 }
