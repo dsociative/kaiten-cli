@@ -18,6 +18,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: github/codeql-action/init@v4
         with:
+          config-file: ./.github/codeql/codeql-config.yml
           languages: rust
           build-mode: none
       - uses: github/codeql-action/analyze@v4

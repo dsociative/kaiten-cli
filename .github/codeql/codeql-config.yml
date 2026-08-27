@@ -1,0 +1,11 @@
+name: kaiten-cli CodeQL config
+
+# `rust/cleartext-logging` treats `println!` as a log file and any identifier
+# matching user(name|id) / uid / account as sensitive, so every `card view`,
+# `card member` and `auth status` line that names a user is an alert — printing
+# them on stdout is what a CLI does. The only real log sinks here are the
+# `tracing` calls, which print host, path and status only. The query is
+# therefore excluded; everything else in the default suite stays on.
+query-filters:
+  - exclude:
+      id: rust/cleartext-logging
