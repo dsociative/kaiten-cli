@@ -102,6 +102,11 @@ impl KaitenClient {
         crate::api::checklists::Checklists { client: self }
     }
 
+    /// Card external links facade.
+    pub fn external_links(&self) -> crate::api::external_links::ExternalLinks<'_> {
+        crate::api::external_links::ExternalLinks { client: self }
+    }
+
     /// Card file attachments facade.
     pub fn files(&self) -> crate::api::files::Files<'_> {
         crate::api::files::Files { client: self }

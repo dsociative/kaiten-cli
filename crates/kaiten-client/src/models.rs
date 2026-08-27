@@ -517,6 +517,23 @@ pub struct SelectValue {
     pub sort_order: Option<f64>,
 }
 
+/// An external link of a card (`Links (common links)` in Kaiten): a URL
+/// with an optional description. `GET /cards/{id}` embeds these too, under
+/// `external_links`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ExternalLink {
+    pub id: u64,
+    #[serde(default)]
+    pub uid: Option<String>,
+    pub url: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub created: Option<String>,
+    #[serde(default)]
+    pub updated: Option<String>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
