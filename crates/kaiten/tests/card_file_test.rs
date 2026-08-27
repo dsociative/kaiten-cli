@@ -195,18 +195,25 @@ async fn card_file_get_saves_original_name_in_cwd() {
     );
 }
 
+/// Newer storage, as observed live: the API path (bearer) answers with the
+/// file's metadata carrying a short-lived signed storage url; the bytes come
+/// from there, without credentials.
 #[tokio::test(flavor = "multi_thread")]
-async fn card_file_get_by_uid_uses_bearer_on_api_host_and_follows_redirect() {
+async fn card_file_get_by_uid_fetches_the_signed_storage_url_from_the_metadata() {
     let api = MockServer::start().await;
     let storage = MockServer::start().await;
     mock_card(&api, &storage).await;
     Mock::given(method("GET"))
         .and(path(NEWER_PATH))
         .and(header("Authorization", "Bearer test-token"))
-        .respond_with(
-            ResponseTemplate::new(302)
-                .insert_header("Location", format!("{}/blob.xlsx", storage.uri()).as_str()),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            format!(
+                r#"{{"id": "{NEWER_UID}", "name": "report.xlsx", "size": "10",
+                    "url": "{}/blob.xlsx?X-Amz-Signature=x"}}"#,
+                storage.uri()
+            ),
+            "application/json",
+        ))
         .expect(1)
         .mount(&api)
         .await;

@@ -2092,9 +2092,21 @@ mod tests {
         );
     }
 
+    /// Matches a request that carries NO `Authorization` header.
+    struct NoAuthHeader;
+
+    impl wiremock::Match for NoAuthHeader {
+        fn matches(&self, request: &wiremock::Request) -> bool {
+            !request.headers.contains_key("authorization")
+        }
+    }
+
+    /// Newer storage: the API path (bearer) answers with metadata whose `url`
+    /// is a signed storage link; the bytes come from there without the token.
     #[tokio::test]
-    async fn download_file_by_uid_resolves_relative_url_on_api_host_with_bearer() {
+    async fn download_file_by_uid_follows_the_signed_url_from_the_metadata() {
         let server = MockServer::start().await;
+        let storage = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/cards/5"))
             .respond_with(ResponseTemplate::new(200).set_body_string(
@@ -2109,9 +2121,22 @@ mod tests {
                 "/api/v1/cards/cu/files/6a8e66af-0000-0000-0000-000000000000",
             ))
             .and(header("Authorization", "Bearer test-token"))
-            .respond_with(ResponseTemplate::new(200).set_body_bytes(b"xls".to_vec()))
+            .respond_with(ResponseTemplate::new(200).set_body_raw(
+                format!(
+                    r#"{{"id": "6a8e66af-0000-0000-0000-000000000000", "url": "{}/signed/blob"}}"#,
+                    storage.uri()
+                ),
+                "application/json",
+            ))
             .expect(1)
             .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/signed/blob"))
+            .and(NoAuthHeader)
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(b"xls".to_vec()))
+            .expect(1)
+            .mount(&storage)
             .await;
         let dir = tempfile::tempdir().unwrap();
 

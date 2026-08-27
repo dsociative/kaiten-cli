@@ -92,10 +92,12 @@ async fn attach_missing_local_file_is_io_error_without_any_request() {
 // ---------------------------------------------------------------------------
 
 const CARD_GET_FULL: &str = include_str!("fixtures/card_get_full.json");
-/// Shape B as reported in issue #12 from another Kaiten instance (`type` 11,
-/// UUID `id`, string `size`, host-root-relative `url`); not yet reproduced on
-/// the test account — replace with a live capture when one is available.
+/// Shape B, captured live (sanitized) from a card on the newer storage
+/// (`type` 11): UUID `id`, string `size`, host-root-relative `url`.
 const CARD_GET_FILES_TYPE11: &str = include_str!("fixtures/card_get_files_type11.json");
+/// What the newer storage's API path answers (captured live, sanitized): the
+/// file's metadata with a short-lived signed storage `url` — not the bytes.
+const FILE_METADATA_TYPE11: &str = include_str!("fixtures/file_metadata_type11.json");
 
 /// Matches a request that carries NO `Authorization` header.
 struct NoAuthHeader;
@@ -139,7 +141,7 @@ async fn list_takes_files_from_card_get_not_from_files_endpoint() {
 async fn list_parses_uuid_id_and_string_size_from_newer_storage() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
-        .and(path("/cards/12345678"))
+        .and(path("/cards/64533247"))
         .respond_with(
             ResponseTemplate::new(200).set_body_raw(CARD_GET_FILES_TYPE11, "application/json"),
         )
@@ -147,10 +149,11 @@ async fn list_parses_uuid_id_and_string_size_from_newer_storage() {
         .await;
 
     let client = KaitenClient::new(&server.uri(), "test-token").unwrap();
-    let files = client.files().list(12_345_678).await.unwrap();
+    let files = client.files().list(64_533_247).await.unwrap();
     assert_eq!(files.len(), 1);
     assert_eq!(files[0].id, 0);
-    assert_eq!(files[0].size, Some(58_818));
+    assert_eq!(files[0].size, Some(33_055));
+    assert_eq!(files[0].file_type, Some(11));
     assert!(
         files[0]
             .url
@@ -160,7 +163,7 @@ async fn list_parses_uuid_id_and_string_size_from_newer_storage() {
     );
     assert_eq!(
         kaiten_client::FileRef::from(&files[0]),
-        kaiten_client::FileRef::Uid("6a8e66af-0000-0000-0000-000000000000".into())
+        kaiten_client::FileRef::Uid("08b5876d-0000-0000-0000-000000000000".into())
     );
 }
 
@@ -331,4 +334,273 @@ async fn download_html_error_page_is_not_dumped_verbatim() {
         }
         other => panic!("unexpected {other:?}"),
     }
+}
+
+/// Newer storage, as observed live: `GET /api/v1/cards/{card_uid}/files/{id}`
+/// (bearer) answers 200 with JSON metadata whose `url` is a short-lived signed
+/// storage link; the bytes are fetched from there, without credentials.
+#[tokio::test]
+async fn download_newer_storage_follows_the_signed_url_from_the_metadata() {
+    let api = MockServer::start().await;
+    let storage = MockServer::start().await;
+    let meta = FILE_METADATA_TYPE11.replace(
+        "https://storage.example/bucket",
+        &format!("{}/bucket", storage.uri()),
+    );
+    Mock::given(method("GET"))
+        .and(path("/api/v1/cards/14dc3064-0000-0000-0000-000000000000/files/08b5876d-0000-0000-0000-000000000000"))
+        .and(header("Authorization", "Bearer test-token"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(meta, "application/json"))
+        .expect(1)
+        .mount(&api)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/bucket/08b5876d-0000-0000-0000-000000000000"))
+        .and(NoAuthHeader)
+        .respond_with(ResponseTemplate::new(200).set_body_raw("<html>report</html>", "text/html"))
+        .expect(1)
+        .mount(&storage)
+        .await;
+
+    let client = KaitenClient::new(&format!("{}/api/latest", api.uri()), "test-token").unwrap();
+    let card: kaiten_client::Card = serde_json::from_str(CARD_GET_FILES_TYPE11).unwrap();
+    let bytes = client.files().download(&card.files[0]).await.unwrap();
+    assert_eq!(bytes, b"<html>report</html>");
+}
+
+#[tokio::test]
+async fn download_newer_storage_metadata_without_url_is_an_error_without_a_second_request() {
+    let api = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v1/cards/14dc3064-0000-0000-0000-000000000000/files/08b5876d-0000-0000-0000-000000000000"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(r#"{"id": "x", "name": "r.html"}"#, "application/json"))
+        .expect(1)
+        .mount(&api)
+        .await;
+
+    let client = KaitenClient::new(&format!("{}/api/latest", api.uri()), "test-token").unwrap();
+    let card: kaiten_client::Card = serde_json::from_str(CARD_GET_FILES_TYPE11).unwrap();
+    let err = client.files().download(&card.files[0]).await.unwrap_err();
+    assert!(
+        matches!(&err, kaiten_client::KaitenError::Io(e) if e.kind() == std::io::ErrorKind::InvalidInput),
+        "{err:?}"
+    );
+    assert!(err.to_string().contains("download url"), "{err}");
+}
+
+/// A redirecting instance hands the bytes over as-is: a JSON *attachment*
+/// reached through a 302 must never be mistaken for storage metadata.
+#[tokio::test]
+async fn download_json_attachment_behind_a_redirect_is_returned_verbatim() {
+    let api = MockServer::start().await;
+    let storage = MockServer::start().await;
+    let attachment = format!(r#"{{"url": "{}/elsewhere"}}"#, storage.uri());
+    Mock::given(method("GET"))
+        .and(path("/api/v1/cards/CU/files/FU"))
+        .and(header("Authorization", "Bearer test-token"))
+        .respond_with(
+            ResponseTemplate::new(302)
+                .insert_header("Location", format!("{}/data.json", storage.uri()).as_str()),
+        )
+        .expect(1)
+        .mount(&api)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/data.json"))
+        .and(NoAuthHeader)
+        .respond_with(
+            ResponseTemplate::new(200).set_body_raw(attachment.clone(), "application/json"),
+        )
+        .expect(1)
+        .mount(&storage)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/elsewhere"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(b"wrong".to_vec()))
+        .expect(0)
+        .mount(&storage)
+        .await;
+
+    let client = KaitenClient::new(&format!("{}/api/latest", api.uri()), "test-token").unwrap();
+    let file =
+        card_file(r#"{"id": "FU", "name": "data.json", "url": "/api/v1/cards/CU/files/FU"}"#);
+    assert_eq!(
+        client.files().download(&file).await.unwrap(),
+        attachment.as_bytes()
+    );
+}
+
+#[tokio::test]
+async fn download_classic_json_attachment_is_returned_verbatim() {
+    let storage = MockServer::start().await;
+    let attachment = r#"{"url": "https://example.invalid/not-followed"}"#;
+    Mock::given(method("GET"))
+        .and(path("/a.json"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(attachment, "application/json"))
+        .expect(1)
+        .mount(&storage)
+        .await;
+
+    let client = KaitenClient::new("http://127.0.0.1:9", "test-token").unwrap();
+    let file = card_file(&format!(
+        r#"{{"id": 1, "name": "a.json", "url": "{}/a.json"}}"#,
+        storage.uri()
+    ));
+    assert_eq!(
+        client.files().download(&file).await.unwrap(),
+        attachment.as_bytes()
+    );
+}
+
+#[tokio::test]
+async fn download_newer_storage_recognises_the_media_type_case_insensitively() {
+    let api = MockServer::start().await;
+    let storage = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v1/cards/CU/files/FU"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            format!(r#"{{"id": "FU", "url": "{}/signed"}}"#, storage.uri()),
+            "Application/JSON; charset=UTF-8",
+        ))
+        .expect(1)
+        .mount(&api)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/signed"))
+        .and(NoAuthHeader)
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(b"real".to_vec()))
+        .expect(1)
+        .mount(&storage)
+        .await;
+
+    let client = KaitenClient::new(&format!("{}/api/latest", api.uri()), "test-token").unwrap();
+    let file = card_file(r#"{"id": "FU", "name": "r", "url": "/api/v1/cards/CU/files/FU"}"#);
+    assert_eq!(client.files().download(&file).await.unwrap(), b"real");
+}
+
+#[tokio::test]
+async fn download_newer_storage_invalid_json_metadata_is_a_decode_error() {
+    let api = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v1/cards/CU/files/FU"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_raw("<html>login</html>", "application/json"),
+        )
+        .mount(&api)
+        .await;
+
+    let client = KaitenClient::new(&format!("{}/api/latest", api.uri()), "test-token").unwrap();
+    let file = card_file(r#"{"id": "FU", "name": "r", "url": "/api/v1/cards/CU/files/FU"}"#);
+    let err = client.files().download(&file).await.unwrap_err();
+    assert!(
+        matches!(err, kaiten_client::KaitenError::Decode { .. }),
+        "{err:?}"
+    );
+}
+
+/// The signed link lives for seconds; when storage refuses it the error must
+/// say so and name the file, not just echo an S3 XML page.
+#[tokio::test]
+async fn download_newer_storage_refused_signed_link_names_the_file_and_storage() {
+    let api = MockServer::start().await;
+    let storage = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v1/cards/CU/files/FU"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            format!(
+                r#"{{"id": "FU", "name": "report.html", "url": "{}/signed"}}"#,
+                storage.uri()
+            ),
+            "application/json",
+        ))
+        .mount(&api)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/signed"))
+        .respond_with(ResponseTemplate::new(403).set_body_raw(
+            "<?xml version=\"1.0\"?><Error><Code>AccessDenied</Code><Message>Request has expired</Message></Error>",
+            "application/xml",
+        ))
+        .mount(&storage)
+        .await;
+
+    let client = KaitenClient::new(&format!("{}/api/latest", api.uri()), "test-token").unwrap();
+    let file =
+        card_file(r#"{"id": "FU", "name": "report.html", "url": "/api/v1/cards/CU/files/FU"}"#);
+    let err = client.files().download(&file).await.unwrap_err();
+    assert!(
+        matches!(err, kaiten_client::KaitenError::Api { status: 403, .. }),
+        "{err:?}"
+    );
+    let text = err.to_string();
+    assert!(
+        text.contains("storage refused") && text.contains("report.html"),
+        "{text}"
+    );
+}
+
+/// reqwest never sends a fragment, so the answering url has none: a `#…` on
+/// the file url must not make the metadata look like the file itself.
+#[tokio::test]
+async fn download_newer_storage_ignores_a_fragment_on_the_file_url() {
+    let api = MockServer::start().await;
+    let storage = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v1/cards/CU/files/FU"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            format!(r#"{{"id": "FU", "url": "{}/signed"}}"#, storage.uri()),
+            "application/json",
+        ))
+        .expect(1)
+        .mount(&api)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/signed"))
+        .and(NoAuthHeader)
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(b"real".to_vec()))
+        .expect(1)
+        .mount(&storage)
+        .await;
+
+    let client = KaitenClient::new(&format!("{}/api/latest", api.uri()), "test-token").unwrap();
+    let file = card_file(r#"{"id": "FU", "name": "r", "url": "/api/v1/cards/CU/files/FU#frag"}"#);
+    assert_eq!(client.files().download(&file).await.unwrap(), b"real");
+}
+
+/// A redirect to another path on the API origin serving JSON is still "the
+/// API handed us the file", not metadata.
+#[tokio::test]
+async fn download_json_attachment_behind_a_same_origin_redirect_is_returned_verbatim() {
+    let api = MockServer::start().await;
+    let attachment = format!(r#"{{"url": "{}/elsewhere"}}"#, api.uri());
+    Mock::given(method("GET"))
+        .and(path("/api/v1/cards/CU/files/FU"))
+        .respond_with(ResponseTemplate::new(302).insert_header(
+            "Location",
+            format!("{}/storage/FU.json", api.uri()).as_str(),
+        ))
+        .expect(1)
+        .mount(&api)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/storage/FU.json"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_raw(attachment.clone(), "application/json"),
+        )
+        .expect(1)
+        .mount(&api)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/elsewhere"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(b"wrong".to_vec()))
+        .expect(0)
+        .mount(&api)
+        .await;
+
+    let client = KaitenClient::new(&format!("{}/api/latest", api.uri()), "test-token").unwrap();
+    let file = card_file(r#"{"id": "FU", "name": "a.json", "url": "/api/v1/cards/CU/files/FU"}"#);
+    assert_eq!(
+        client.files().download(&file).await.unwrap(),
+        attachment.as_bytes()
+    );
 }
