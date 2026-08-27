@@ -89,7 +89,7 @@ kaiten board view 456                    # columns and lanes (ids for `card move
 
 kaiten card list --mine
 kaiten card list --board 456 --query "deploy" --limit 20
-kaiten card view 67089469 --include external_links,comments   # a full card URL works too
+kaiten card view 67089469 --include comments   # a full card URL works too; external links are always shown
 kaiten card create --board 456 --title "Fix the flaky test" --description "..."
 kaiten card edit 67089469 --title "New title" --asap true
 kaiten card move 67089469 --column 6308511
@@ -121,8 +121,9 @@ kaiten api POST /cards --data '{"board_id":456,"title":"Raw"}'
 
 Add `--json` to any command to print the raw JSON of the API response.
 
-`card view --include external_links,comments` fetches extra sections with the card
-(one request each; the names match the MCP `get_card` `include` values).
+`card view` shows the card's external links (they come with the card);
+`--include comments` fetches the comments too (one extra request; the name matches
+the MCP `get_card` `include` value; `external_links` is accepted for compatibility).
 `card view --comments` still works but is deprecated — use `--include comments`.
 
 ## Shell completion
@@ -142,9 +143,9 @@ kaiten completion fish > ~/.config/fish/completions/kaiten.fish
 
 The same binary is an MCP server (stdio transport, 40 tools mirroring the CLI,
 including compact card projections and a cursor-based `poll_updates` for
-event-like agent workflows). `get_card` takes an optional
-`include: ["external_links", "comments"]` to return those sections in the same
-call (one extra request each).
+event-like agent workflows). `get_card` returns the card's external links and
+takes an optional `include: ["comments"]` to add the comments in the same call
+(one extra request; `"external_links"` is accepted for compatibility).
 
 Claude Code:
 
@@ -192,7 +193,7 @@ by area (✅ covered, ◐ partial, — not covered):
 | Users list (id lookup) | ✅ | ✅ |
 | Card links: children / parents / blockers | ✅ `card link/unlink/unblock` | ✅ `link_cards` etc. |
 | Files: attach / detach / list / download | ✅ (uploads get a PUBLIC url!) | ✅ (`download_file` saves locally) |
-| External links (Links (common links)): list / add / edit / remove | ✅ `card external-link`, `card view --include external_links` | ✅ four tools + `get_card` `include` |
+| External links (Links (common links)): list / add / edit / remove | ✅ `card external-link`, shown by `card view` | ✅ four tools, part of `get_card` |
 | Custom properties: reference + set values | ✅ `property list/values`, `--properties-json` | ✅ two tools + `properties` (a JSON object — a wrong shape is rejected before the API call; mutations echo the resulting `properties`) |
 | Time logs | ✅ `card time add/list` | ✅ |
 | Events: polling for changes | — | ✅ `poll_updates` (cursor-based) |
@@ -233,3 +234,10 @@ MINOR (`0.2` → `0.3`); fixes and dependency updates bump PATCH. Until 1.0 a
 MINOR bump may also carry a breaking change — the release notes say so when it
 does. Cargo treats `0.y` as the compatibility line, so a `"0.3"` requirement
 does not pick up `0.4.0` on its own.
+
+`kaiten-client` types are `#[non_exhaustive]` (response models and
+`KaitenError`; request types are built with `CreateCard::new` /
+`UpdateCard::default` / `CardFilter::default`), so following the API by adding
+fields is a compatible change. CI runs `cargo semver-checks` on every pull
+request against the PR's base commit: a PR must fit a MINOR release unless it
+carries the `breaking` label, which declares an intentional break.

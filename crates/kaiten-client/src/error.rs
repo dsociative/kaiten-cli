@@ -1,6 +1,7 @@
 pub type Result<T> = std::result::Result<T, KaitenError>;
 
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum KaitenError {
     /// message — из JSON-поля "message" (или reason-фраза при пустом теле);
     /// body — сырое тело ответа целиком (пустая строка, если тела нет).

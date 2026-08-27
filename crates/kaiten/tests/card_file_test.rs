@@ -86,7 +86,7 @@ async fn card_file_list_prints_table() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn card_file_list_json_prints_raw_files_plus_uid() {
+async fn card_file_list_json_prints_raw_files_with_uid() {
     let api = MockServer::start().await;
     let storage = MockServer::start().await;
     mock_card(&api, &storage).await;
@@ -103,7 +103,11 @@ async fn card_file_list_json_prints_raw_files_plus_uid() {
     let files = value.as_array().unwrap();
     assert_eq!(files.len(), 2);
     assert_eq!(files[0]["id"], 61_256_602);
-    assert!(files[0].get("uid").is_none(), "{value}");
+    // the classic storage has a `uid` too — the API's own value, passed through
+    assert_eq!(
+        files[0]["uid"], "48c405aa-a7a3-455e-9752-f2c3225cfecb",
+        "{value}"
+    );
     assert_eq!(files[1]["id"], 0);
     assert_eq!(files[1]["uid"], NEWER_UID, "{value}");
     assert_eq!(files[1]["size"], 58_818);

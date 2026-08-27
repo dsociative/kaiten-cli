@@ -341,10 +341,8 @@ async fn run_list(
     json: bool,
     filters: CardListFilters,
 ) -> Result<(), CliError> {
-    let mut filter = CardFilter {
-        limit: Some(filters.limit),
-        ..Default::default()
-    };
+    let mut filter = CardFilter::default();
+    filter.limit = Some(filters.limit);
     if filters.board.is_none() && filters.space.is_none() {
         if let Some(b) = defaults.board {
             filter.board_id = Some(b);
@@ -421,28 +419,33 @@ async fn run_view(
     if comments_flag {
         eprintln!("warning: --comments is deprecated, use --include comments");
     }
-    let with_links = include.contains(&ViewSection::ExternalLinks);
+    // External links come with the card itself; the value is deprecated,
+    // accepted for compatibility, and only affects the `--json` envelope below.
+    let links_requested = include.contains(&ViewSection::ExternalLinks);
+    if links_requested {
+        eprintln!(
+            "warning: --include external_links is deprecated: external links are always shown"
+        );
+    }
     let with_comments = comments_flag || include.contains(&ViewSection::Comments);
     let card_id = parse_card_ref(card)?;
     let card = client.cards().get(card_id).await?;
-    let links = if with_links {
-        Some(client.external_links().list(card_id).await?)
-    } else {
-        None
-    };
     let comments = if with_comments {
         Some(client.comments().list(card_id).await?)
     } else {
         None
     };
     if json {
-        if links.is_none() && comments.is_none() {
+        if !links_requested && comments.is_none() {
             return output::print_json(&card);
         }
         let mut doc = serde_json::Map::new();
         doc.insert("card".into(), serde_json::json!(card));
-        if let Some(links) = &links {
-            doc.insert("external_links".into(), serde_json::json!(links));
+        if links_requested {
+            doc.insert(
+                "external_links".into(),
+                serde_json::json!(card.external_links),
+            );
         }
         if let Some(comments) = &comments {
             doc.insert("comments".into(), serde_json::json!(comments));
@@ -450,8 +453,8 @@ async fn run_view(
         return output::print_json(&doc);
     }
     print_card_details(&card);
-    if let Some(links) = &links {
-        print_links_section(links);
+    if !card.external_links.is_empty() {
+        print_links_section(&card.external_links);
     }
     if let Some(comments) = &comments {
         print_comments_section(comments);
@@ -523,16 +526,13 @@ async fn run_create(
     let board_id = args.board.or(defaults.board).ok_or_else(|| {
         CliError::InvalidArg("specify --board or set defaults.board in config".into())
     })?;
-    let req = CreateCard {
-        board_id,
-        title: args.title,
-        column_id: args.column,
-        lane_id: args.lane,
-        description: args.description,
-        type_id: args.type_id,
-        asap: if args.asap { Some(true) } else { None },
-        properties: parse_properties_json(args.properties_json)?,
-    };
+    let mut req = CreateCard::new(board_id, args.title);
+    req.column_id = args.column;
+    req.lane_id = args.lane;
+    req.description = args.description;
+    req.type_id = args.type_id;
+    req.asap = if args.asap { Some(true) } else { None };
+    req.properties = parse_properties_json(args.properties_json)?;
     let card = client.cards().create(&req).await?;
     if json {
         return output::print_json(&card);
@@ -558,14 +558,12 @@ async fn run_edit(
             "nothing to edit: pass --title/--description/--type/--asap/--properties-json".into(),
         ));
     }
-    let req = UpdateCard {
-        title: args.title,
-        description: args.description,
-        type_id: args.type_id,
-        asap: args.asap,
-        properties: parse_properties_json(args.properties_json)?,
-        ..Default::default()
-    };
+    let mut req = UpdateCard::default();
+    req.title = args.title;
+    req.description = args.description;
+    req.type_id = args.type_id;
+    req.asap = args.asap;
+    req.properties = parse_properties_json(args.properties_json)?;
     let card = client.cards().update(card_id, &req).await?;
     if json {
         return output::print_json(&card);
@@ -583,12 +581,10 @@ async fn run_move(
     board: Option<u64>,
 ) -> Result<(), CliError> {
     let card_id = parse_card_ref(card)?;
-    let req = UpdateCard {
-        column_id: Some(column),
-        lane_id: lane,
-        board_id: board,
-        ..Default::default()
-    };
+    let mut req = UpdateCard::default();
+    req.column_id = Some(column);
+    req.lane_id = lane;
+    req.board_id = board;
     let card = client.cards().update(card_id, &req).await?;
     if json {
         return output::print_json(&card);
@@ -599,10 +595,8 @@ async fn run_move(
 
 async fn run_archive(client: &KaitenClient, json: bool, card: &str) -> Result<(), CliError> {
     let card_id = parse_card_ref(card)?;
-    let req = UpdateCard {
-        condition: Some(2),
-        ..Default::default()
-    };
+    let mut req = UpdateCard::default();
+    req.condition = Some(2);
     let card = client.cards().update(card_id, &req).await?;
     if json {
         return output::print_json(&card);
@@ -977,10 +971,8 @@ async fn run_unlink(
 
 async fn run_unblock(client: &KaitenClient, json: bool, card: &str) -> Result<(), CliError> {
     let card_id = parse_card_ref(card)?;
-    let req = UpdateCard {
-        blocked: Some(false),
-        ..Default::default()
-    };
+    let mut req = UpdateCard::default();
+    req.blocked = Some(false);
     let card = client.cards().update(card_id, &req).await?;
     if json {
         return output::print_json(&card);
@@ -1028,9 +1020,7 @@ async fn run_file_list(client: &KaitenClient, json: bool, card: &str) -> Result<
     let card_id = parse_card_ref(card)?;
     let files = client.files().list(card_id).await?;
     if json {
-        let entries: Vec<download::FileListEntry<'_>> =
-            files.iter().map(download::FileListEntry::from).collect();
-        return output::print_json(&entries);
+        return output::print_json(&files);
     }
     if files.is_empty() {
         println!("no files on card {card_id}");

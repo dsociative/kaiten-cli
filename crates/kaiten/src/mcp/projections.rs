@@ -167,8 +167,8 @@ impl From<&Blocker> for BlockerView {
 pub struct FileView {
     /// Numeric id; 0 when the storage identifies the file only by `uid`.
     pub id: u64,
-    /// UUID of a file on the newer storage (only when `id` is 0) — pass
-    /// either to download_file.
+    /// The file's UUID; newer-storage files (`id` 0) are addressed by it.
+    /// download_file accepts either `id` or `uid`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub uid: Option<String>,
     pub name: String,
@@ -185,13 +185,9 @@ pub struct FileView {
 
 impl From<&CardFile> for FileView {
     fn from(f: &CardFile) -> Self {
-        let uid = match kaiten_client::FileRef::from(f) {
-            kaiten_client::FileRef::Uid(uid) => Some(uid),
-            kaiten_client::FileRef::Id(_) => None,
-        };
         Self {
             id: f.id,
-            uid,
+            uid: f.uid.clone(),
             name: f.name.clone(),
             url: f.url.clone(),
             size: f.size,
@@ -266,7 +262,7 @@ pub struct CardDetail {
     pub blockers: Vec<BlockerView>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub files: Vec<FileView>,
-    /// Only with `get_card` `include: ["external_links"]` (a second request).
+    /// Present when the card has external links (they come with the card).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub external_links: Option<Vec<ExternalLinkView>>,
     /// Only with `get_card` `include: ["comments"]` (a second request).
@@ -293,7 +289,12 @@ impl From<&Card> for CardDetail {
             parents: card.parents.iter().map(LinkedCardView::from).collect(),
             blockers: card.blockers.iter().map(BlockerView::from).collect(),
             files: card.files.iter().map(FileView::from).collect(),
-            external_links: None,
+            external_links: (!card.external_links.is_empty()).then(|| {
+                card.external_links
+                    .iter()
+                    .map(ExternalLinkView::from)
+                    .collect()
+            }),
             comments: None,
         }
     }

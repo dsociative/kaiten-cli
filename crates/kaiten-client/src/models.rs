@@ -6,6 +6,7 @@
 //! Dates are plain ISO strings (no chrono).
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[non_exhaustive]
 pub struct User {
     pub id: u64,
     #[serde(default)]
@@ -21,6 +22,7 @@ pub struct User {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[non_exhaustive]
 pub struct Space {
     pub id: u64,
     #[serde(default)]
@@ -31,6 +33,7 @@ pub struct Space {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[non_exhaustive]
 pub struct Column {
     pub id: u64,
     pub title: String,
@@ -44,6 +47,7 @@ pub struct Column {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[non_exhaustive]
 pub struct Lane {
     pub id: u64,
     pub title: String,
@@ -56,6 +60,7 @@ pub struct Lane {
 /// A nested `board` inside a card has no `columns`/`lanes` keys,
 /// so both default to empty vectors.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[non_exhaustive]
 pub struct Board {
     pub id: u64,
     pub title: String,
@@ -68,6 +73,7 @@ pub struct Board {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[non_exhaustive]
 pub struct CardType {
     pub id: u64,
     pub name: String,
@@ -81,6 +87,7 @@ pub struct CardType {
 
 /// A tag inside `card.tags`: `id` is the link id, `tag_id` is the company tag id.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[non_exhaustive]
 pub struct CardTag {
     pub id: u64,
     #[serde(default)]
@@ -91,6 +98,7 @@ pub struct CardTag {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[non_exhaustive]
 pub struct CardMember {
     /// User id. ABSENT in PATCH /members/{id} responses (only `user_id`
     /// is present there), hence the default.
@@ -110,6 +118,7 @@ pub struct CardMember {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[non_exhaustive]
 pub struct ChecklistItem {
     pub id: u64,
     pub text: String,
@@ -120,6 +129,7 @@ pub struct ChecklistItem {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[non_exhaustive]
 pub struct Checklist {
     pub id: u64,
     pub name: String,
@@ -136,6 +146,7 @@ pub struct Checklist {
 /// The blocking card is referenced by `blocker_card_id`/`blocker_card_title`
 /// (the `blocker` key in the raw JSON is the *user* who created the block).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[non_exhaustive]
 pub struct Blocker {
     pub id: u64,
     #[serde(default)]
@@ -161,13 +172,19 @@ pub struct Blocker {
 /// `id`, sends `size` as a string and a host-root-relative `url` under
 /// `/api/v1` that requires the API token. Both parse into this struct: `id`
 /// is `0` when the API identifies the file only by a UUID — address such
-/// files through [`FileRef`], which recovers the UUID from `url`. Parsing is
-/// tolerant only for self-describing formats such as JSON.
+/// files through [`FileRef`], built from `uid` (or, failing that, from the
+/// UUID in `url`). Parsing is tolerant only for self-describing formats such
+/// as JSON.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(from = "RawCardFile")]
+#[non_exhaustive]
 pub struct CardFile {
     /// Numeric id on the classic storage; `0` on the newer storage (see above).
     pub id: u64,
+    /// The file's UUID: the `uid` key on the classic storage, the string `id`
+    /// on the newer one (where `uid` is null). This is what
+    /// [`FileRef::Uid`] carries.
+    pub uid: Option<String>,
     pub name: String,
     #[serde(default)]
     pub url: Option<String>,
@@ -192,6 +209,8 @@ pub struct CardFile {
 #[derive(serde::Deserialize)]
 struct RawCardFile {
     id: de::NumOrStr,
+    #[serde(default)]
+    uid: Option<String>,
     name: String,
     #[serde(default)]
     url: Option<String>,
@@ -213,8 +232,17 @@ struct RawCardFile {
 
 impl From<RawCardFile> for CardFile {
     fn from(raw: RawCardFile) -> Self {
+        // A non-numeric string id is the newer storage's UUID.
+        let (id, id_as_uid) = match raw.id {
+            de::NumOrStr::Num(n) => (n, None),
+            de::NumOrStr::Str(s) => match s.trim().parse::<u64>() {
+                Ok(n) => (n, None),
+                Err(_) => (0, Some(s)),
+            },
+        };
         Self {
-            id: raw.id.into_u64().unwrap_or(0),
+            id,
+            uid: raw.uid.or(id_as_uid).filter(|u| !u.is_empty()),
             name: raw.name,
             url: raw.url,
             size: raw.size,
@@ -318,9 +346,14 @@ impl FileRef {
         match self {
             FileRef::Id(0) => false,
             FileRef::Id(id) => file.id == *id,
-            FileRef::Uid(uid) => file
-                .uuid_from_url()
-                .is_some_and(|u| u.eq_ignore_ascii_case(uid)),
+            FileRef::Uid(uid) => {
+                file.uid
+                    .as_deref()
+                    .is_some_and(|u| u.eq_ignore_ascii_case(uid))
+                    || file
+                        .uuid_from_url()
+                        .is_some_and(|u| u.eq_ignore_ascii_case(uid))
+            }
         }
     }
 }
@@ -329,6 +362,9 @@ impl From<&CardFile> for FileRef {
     fn from(file: &CardFile) -> Self {
         if file.id != 0 {
             return FileRef::Id(file.id);
+        }
+        if let Some(uid) = file.uid.as_deref() {
+            return FileRef::Uid(uid.to_owned());
         }
         match file.uuid_from_url() {
             Some(uid) => FileRef::Uid(uid.to_owned()),
@@ -361,6 +397,7 @@ impl std::str::FromStr for FileRef {
 /// GET /cards/{id} returns the full card; GET /cards returns cards
 /// without `description`/`members`/`checklists` — the same model parses both.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[non_exhaustive]
 pub struct Card {
     pub id: u64,
     pub title: String,
@@ -436,9 +473,14 @@ pub struct Card {
     pub blockers: Vec<Blocker>,
     #[serde(default)]
     pub files: Vec<CardFile>,
+    /// `Links (common links)`; embedded by `GET /cards/{id}` and, for cards
+    /// that have any, by `GET /cards` too.
+    #[serde(default)]
+    pub external_links: Vec<ExternalLink>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[non_exhaustive]
 pub struct Comment {
     pub id: u64,
     pub text: String,
@@ -456,6 +498,7 @@ pub struct Comment {
 
 /// Company-level tag (GET /tags, POST /cards/{id}/tags).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[non_exhaustive]
 pub struct Tag {
     pub id: u64,
     pub name: String,
@@ -465,6 +508,7 @@ pub struct Tag {
 
 /// A time log entry (GET/POST /cards/{id}/time-logs).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[non_exhaustive]
 pub struct TimeLog {
     pub id: u64,
     /// Minutes.
@@ -484,6 +528,7 @@ pub struct TimeLog {
 
 /// Company user role (GET /user-roles). Built-in roles have negative ids.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[non_exhaustive]
 pub struct UserRole {
     pub id: i64,
     pub name: String,
@@ -495,6 +540,7 @@ pub struct UserRole {
 /// `id_{property_id}`; select values are referenced by id (see
 /// [`SelectValue`]) and passed as an ARRAY even for single select.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[non_exhaustive]
 pub struct CustomProperty {
     pub id: u64,
     pub name: String,
@@ -508,6 +554,7 @@ pub struct CustomProperty {
 /// One option of a select-type custom property
 /// (GET /company/custom-properties/{id}/select-values).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[non_exhaustive]
 pub struct SelectValue {
     pub id: u64,
     pub value: String,
@@ -518,11 +565,11 @@ pub struct SelectValue {
 }
 
 /// An external link of a card (`Links (common links)` in Kaiten): a URL
-/// with an optional description. `GET /cards/{id}` embeds them under
-/// `external_links` as well, but [`Card`] does not model that field yet
-/// (adding one would be a breaking change), so they are read through
-/// [`crate::api::external_links::ExternalLinks::list`].
+/// with an optional description. `GET /cards/{id}` embeds them as
+/// [`Card::external_links`]; the dedicated endpoint behind
+/// [`crate::api::external_links::ExternalLinks`] manages them.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[non_exhaustive]
 pub struct ExternalLink {
     pub id: u64,
     #[serde(default)]
@@ -609,10 +656,11 @@ mod tests {
         assert!(serde_json::from_str::<CardFile>(r#"{"name": "n"}"#).is_err());
     }
 
-    /// Serialize output is part of the CLI's `--json` contract: no new keys,
-    /// `file_type` still written as `type`.
+    /// The serialized shape is what `card file list --json` prints (`file_type`
+    /// written as `type`); `uid` joined the key set when the model started
+    /// carrying it.
     #[test]
-    fn card_file_serializes_the_same_keys_as_before() {
+    fn card_file_serializes_the_model_keys() {
         let value = serde_json::to_value(file(CLASSIC)).unwrap();
         let mut keys: Vec<&str> = value
             .as_object()
@@ -633,6 +681,7 @@ mod tests {
                 "name",
                 "size",
                 "type",
+                "uid",
                 "url"
             ]
         );
@@ -659,14 +708,33 @@ mod tests {
     }
 
     #[test]
-    fn file_ref_from_card_file_uses_url_uuid_when_id_is_zero() {
+    fn file_ref_from_card_file_prefers_id_then_uid_then_url_uuid() {
         assert_eq!(FileRef::from(&file(CLASSIC)), FileRef::Id(61_256_602));
         assert_eq!(
             FileRef::from(&file(NEWER)),
             FileRef::Uid("6a8e66af-0000-0000-0000-000000000000".into())
         );
-        let orphan = file(r#"{"id": "x-y", "name": "n"}"#);
+        // a non-numeric string id is the uid even without a url
+        let no_url = file(r#"{"id": "x-y", "name": "n"}"#);
+        assert_eq!(no_url.uid.as_deref(), Some("x-y"));
+        assert_eq!(FileRef::from(&no_url), FileRef::Uid("x-y".into()));
+        // nothing to address the file by → the 0 sentinel
+        let orphan = file(r#"{"id": 0, "name": "n"}"#);
         assert_eq!(FileRef::from(&orphan), FileRef::Id(0));
+        // an empty string id is no uid at all
+        let empty = file(r#"{"id": "", "name": "n"}"#);
+        assert_eq!(empty.uid, None);
+        assert_eq!(FileRef::from(&empty), FileRef::Id(0));
+        assert!(!FileRef::Uid(String::new()).matches(&empty));
+        // when id is 0 and both are present, the wire uid wins over the url's uuid
+        let both = file(
+            r#"{"id": "aaaaaaaa-0000-0000-0000-000000000000", "name": "n",
+                "url": "/api/v1/cards/c/files/bbbbbbbb-0000-0000-0000-000000000000"}"#,
+        );
+        assert_eq!(
+            FileRef::from(&both),
+            FileRef::Uid("aaaaaaaa-0000-0000-0000-000000000000".into())
+        );
     }
 
     #[test]
@@ -679,6 +747,13 @@ mod tests {
         assert!(!FileRef::Uid("6a8e66af-0000-0000-0000-000000000000".into()).matches(&classic));
         // a classic url ends in `<uuid>.ext`: the uid is matched without the extension
         assert!(FileRef::Uid("48c405aa-a7a3-455e-9752-f2c3225cfecb".into()).matches(&classic));
+        // the wire `uid` (which need not equal the url's uuid) matches as well
+        let with_uid = file(
+            r#"{"id": 5, "uid": "252215b3-9303-485a-a800-859497aa942a", "name": "n",
+                "url": "https://files.kaiten.ru/d4586f6a-3e00-4253-aac7-a6f6c4190f40.txt"}"#,
+        );
+        assert!(FileRef::Uid("252215B3-9303-485A-A800-859497AA942A".into()).matches(&with_uid));
+        assert!(FileRef::Uid("d4586f6a-3e00-4253-aac7-a6f6c4190f40".into()).matches(&with_uid));
         assert!(
             !FileRef::Id(0).matches(&newer),
             "0 is a sentinel, not an id"

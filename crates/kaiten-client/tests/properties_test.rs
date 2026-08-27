@@ -67,10 +67,8 @@ async fn update_card_sends_properties_object_verbatim() {
         .await;
 
     let client = KaitenClient::new(&server.uri(), "test-token").unwrap();
-    let req = UpdateCard {
-        properties: Some(serde_json::json!({ "id_612634": [18_929_916] })),
-        ..Default::default()
-    };
+    let mut req = UpdateCard::default();
+    req.properties = Some(serde_json::json!({ "id_612634": [18_929_916] }));
     let card = client.cards().update(67_089_469, &req).await.unwrap();
     assert_eq!(card.properties.unwrap()["id_612634"][0], 18_929_916);
 }

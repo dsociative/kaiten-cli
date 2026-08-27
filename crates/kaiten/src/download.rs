@@ -125,26 +125,6 @@ pub(crate) async fn save(
     })
 }
 
-/// `card file list --json`: the raw file plus the `uid` a newer-storage file
-/// is addressed by (see [`FileRef`]), so scripts need not re-derive it.
-#[derive(Debug, serde::Serialize)]
-pub(crate) struct FileListEntry<'a> {
-    #[serde(flatten)]
-    pub file: &'a CardFile,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub uid: Option<String>,
-}
-
-impl<'a> From<&'a CardFile> for FileListEntry<'a> {
-    fn from(file: &'a CardFile) -> Self {
-        let uid = match FileRef::from(file) {
-            FileRef::Uid(uid) => Some(uid),
-            FileRef::Id(_) => None,
-        };
-        Self { file, uid }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
