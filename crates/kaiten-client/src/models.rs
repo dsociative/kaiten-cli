@@ -530,7 +530,6 @@ pub struct TimeLog {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[non_exhaustive]
 pub struct UserRole {
-    pub id: i64,
     pub name: String,
 }
 
