@@ -123,7 +123,8 @@ Add `--json` to any command to print the raw JSON of the API response.
 
 `card view` shows the card's external links (they come with the card);
 `--include comments` fetches the comments too (one extra request; the name matches
-the MCP `get_card` `include` value). See "Deprecated forms" below.
+the MCP `get_card` `include` value; `external_links` is accepted for compatibility).
+`card view --comments` still works but is deprecated — use `--include comments`.
 
 ## Shell completion
 
@@ -144,7 +145,7 @@ The same binary is an MCP server (stdio transport, 40 tools mirroring the CLI,
 including compact card projections and a cursor-based `poll_updates` for
 event-like agent workflows). `get_card` returns the card's external links and
 takes an optional `include: ["comments"]` to add the comments in the same call
-(one extra request; `"external_links"` is deprecated and does nothing).
+(one extra request; `"external_links"` is accepted for compatibility).
 
 Claude Code:
 
@@ -225,13 +226,6 @@ cargo fmt --all -- --check
 
 Licensed under either of [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE),
 at your option.
-
-## Deprecated forms
-
-Still accepted, still working, removed only in a major release of the CLI:
-`card view --comments` (use `--include comments`), `card view --include
-external_links` and MCP `get_card` `include: ["external_links"]` (external
-links always come with the card).
 
 ## Versioning
 
