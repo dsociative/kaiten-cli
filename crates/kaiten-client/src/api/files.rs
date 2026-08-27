@@ -147,6 +147,14 @@ fn is_json(content_type: Option<&str>) -> bool {
 /// another host, so the invariant is enforced here and not left to the
 /// caller's token check.
 pub(crate) fn resolve_file_url(base_url: &url::Url, raw: &str) -> Result<url::Url> {
+    // A fragment is never sent, so the answering url never has one: drop it
+    // here so "the url that answered is the one we asked for" holds.
+    let mut resolved = resolve_file_url_raw(base_url, raw)?;
+    resolved.set_fragment(None);
+    Ok(resolved)
+}
+
+fn resolve_file_url_raw(base_url: &url::Url, raw: &str) -> Result<url::Url> {
     match url::Url::parse(raw) {
         Ok(url) => Ok(url),
         Err(url::ParseError::RelativeUrlWithoutBase) => {
