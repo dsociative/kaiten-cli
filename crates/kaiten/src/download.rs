@@ -53,13 +53,22 @@ pub(crate) fn find_file<'a>(
     })
 }
 
-/// Where to save: an explicit path as is, an existing directory joined with
-/// `name`, or `default_dir/name`.
-pub(crate) fn target_path(requested: Option<&Path>, default_dir: &Path, name: &str) -> PathBuf {
+/// Where to save: an existing directory joined with `name`, an explicit file
+/// path as is, or `default_dir/name`. A path written with a trailing
+/// separator means "directory" — if it does not exist, say so instead of
+/// silently writing a file under that name.
+pub(crate) fn target_path(
+    requested: Option<&Path>,
+    default_dir: &Path,
+    name: &str,
+) -> Result<PathBuf, CliError> {
     match requested {
-        Some(p) if p.is_dir() => p.join(name),
-        Some(p) => p.to_path_buf(),
-        None => default_dir.join(name),
+        Some(p) if p.is_dir() => Ok(p.join(name)),
+        Some(p) if p.as_os_str().to_string_lossy().ends_with(['/', '\\']) => Err(
+            CliError::InvalidArg(format!("directory {} does not exist", p.display())),
+        ),
+        Some(p) => Ok(p.to_path_buf()),
+        None => Ok(default_dir.join(name)),
     }
 }
 
@@ -75,20 +84,48 @@ pub(crate) fn ensure_writable(path: &Path, force: bool, hint: &str) -> Result<()
     Ok(())
 }
 
-/// Download `file` to `target` and describe the result.
+/// Download `file` to `target` and describe the result; `path` is absolute so
+/// an MCP client can find the file regardless of the server's working
+/// directory, and a write failure names the target.
 pub(crate) async fn save(
     client: &KaitenClient,
     file: &CardFile,
     target: &Path,
 ) -> Result<SavedFile, CliError> {
-    client.files().download_to(file, target).await?;
-    let size = std::fs::metadata(target)?.len();
+    let bytes = client.files().download(file).await?;
+    std::fs::write(target, &bytes).map_err(|e| {
+        CliError::Io(std::io::Error::new(
+            e.kind(),
+            format!("cannot write {}: {e}", target.display()),
+        ))
+    })?;
+    let path = std::path::absolute(target).unwrap_or_else(|_| target.to_path_buf());
     Ok(SavedFile {
-        path: target.display().to_string(),
+        path: path.display().to_string(),
         name: file.name.clone(),
-        size,
+        size: u64::try_from(bytes.len()).unwrap_or(u64::MAX),
         mime_type: file.mime_type.clone(),
     })
+}
+
+/// `card file list --json`: the raw file plus the `uid` a newer-storage file
+/// is addressed by (see [`FileRef`]), so scripts need not re-derive it.
+#[derive(Debug, serde::Serialize)]
+pub(crate) struct FileListEntry<'a> {
+    #[serde(flatten)]
+    pub file: &'a CardFile,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub uid: Option<String>,
+}
+
+impl<'a> From<&'a CardFile> for FileListEntry<'a> {
+    fn from(file: &'a CardFile) -> Self {
+        let uid = match FileRef::from(file) {
+            FileRef::Uid(uid) => Some(uid),
+            FileRef::Id(_) => None,
+        };
+        Self { file, uid }
+    }
 }
 
 #[cfg(test)]
@@ -169,18 +206,31 @@ mod tests {
     fn target_path_joins_name_into_existing_dir_or_keeps_explicit_path_or_defaults() {
         let dir = tempfile::tempdir().unwrap();
         assert_eq!(
-            target_path(Some(dir.path()), Path::new("/default"), "a.txt"),
+            target_path(Some(dir.path()), Path::new("/default"), "a.txt").unwrap(),
             dir.path().join("a.txt")
         );
         let explicit = dir.path().join("renamed.bin");
         assert_eq!(
-            target_path(Some(&explicit), Path::new("/default"), "a.txt"),
+            target_path(Some(&explicit), Path::new("/default"), "a.txt").unwrap(),
             explicit
         );
         assert_eq!(
-            target_path(None, dir.path(), "a.txt"),
+            target_path(None, dir.path(), "a.txt").unwrap(),
             dir.path().join("a.txt")
         );
+    }
+
+    /// `-o ./downloads/` says "directory": if it does not exist, say so instead
+    /// of writing a file called `downloads`.
+    #[test]
+    fn target_path_rejects_a_missing_directory_named_with_a_trailing_separator() {
+        let dir = tempfile::tempdir().unwrap();
+        let missing = format!("{}/nodir/", dir.path().display());
+        let err = target_path(Some(Path::new(&missing)), Path::new("/default"), "a.txt")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("does not exist"), "{err}");
+        assert!(err.contains("nodir"), "{err}");
     }
 
     #[test]

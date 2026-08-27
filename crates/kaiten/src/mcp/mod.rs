@@ -23,6 +23,9 @@ pub struct KaitenMcp {
     /// Web origin for short card links, e.g. "https://mycompany.kaiten.ru"
     /// (the API base URL without the `/api/latest` path).
     web_base: String,
+    /// Where `download_file` saves when no `save_path` is given: a per-user
+    /// cache directory, `<card_id>/<file ref>/<name>` underneath.
+    download_dir: std::path::PathBuf,
     tool_router: ToolRouter<Self>,
 }
 
@@ -480,10 +483,10 @@ pub struct DownloadFileParams {
     /// File id (numeric) or uid (UUID), as listed by get_card files
     pub file_id: String,
     /// Target file path, or an existing directory (the original name inside
-    /// it). Default: <temp dir>/kaiten-files/<card_id>/<original name>
+    /// it). Default: <user cache dir>/kaiten/files/<card_id>/<file ref>/<name>
     pub save_path: Option<String>,
-    /// Overwrite an existing file at save_path (default false); the default
-    /// location is always refreshed
+    /// Overwrite an existing file at save_path (default false: the call fails
+    /// instead); the default location is always refreshed
     pub overwrite: Option<bool>,
 }
 
@@ -528,6 +531,10 @@ impl KaitenMcp {
         Self {
             client,
             web_base,
+            download_dir: dirs::cache_dir()
+                .unwrap_or_else(std::env::temp_dir)
+                .join("kaiten")
+                .join("files"),
             tool_router: Self::tool_router(),
         }
     }
@@ -982,7 +989,7 @@ impl KaitenMcp {
     }
 
     #[tool(
-        description = "Download a card attachment to the LOCAL filesystem (binary content cannot be returned over MCP). file_id is the numeric id or the uid from get_card files. Saved to save_path (a file path, or an existing directory) or, when omitted, to <temp dir>/kaiten-files/<card_id>/<original name>; an existing file at an explicit save_path is kept unless overwrite=true. Returns {path, name, size, mime_type}. SECURITY: classic attachments live on a public unguessable URL without authentication; the API token is sent only to your Kaiten host, never to the file storage."
+        description = "Download a card attachment to the LOCAL filesystem (binary content cannot be returned over MCP). file_id is the numeric id or the uid from get_card files. Saved to save_path (a file path, or an existing directory) or, when omitted, to <user cache dir>/kaiten/files/<card_id>/<file ref>/<original name> (e.g. ~/.cache/kaiten/files/... on Linux), which is always refreshed; an existing file at an explicit save_path makes the call fail unless overwrite=true. Returns {path (absolute), name, size, mime_type}. SECURITY: classic attachments live on a public unguessable URL without authentication; the API token is sent only to your Kaiten host, never to the file storage."
     )]
     async fn download_file(
         &self,
@@ -993,11 +1000,14 @@ impl KaitenMcp {
         let file =
             try_args!(download::find_file(p.card_id, &files, &file_ref).map_err(|e| e.to_string()));
         let name = download::safe_file_name(file);
-        let default_dir = std::env::temp_dir()
-            .join("kaiten-files")
-            .join(p.card_id.to_string());
-        let target =
-            download::target_path(p.save_path.as_deref().map(Path::new), &default_dir, &name);
+        let default_dir = self
+            .download_dir
+            .join(p.card_id.to_string())
+            .join(FileRef::from(file).to_string());
+        let target = try_args!(
+            download::target_path(p.save_path.as_deref().map(Path::new), &default_dir, &name)
+                .map_err(|e| e.to_string())
+        );
         if p.save_path.is_some() {
             try_args!(
                 download::ensure_writable(&target, p.overwrite.unwrap_or(false), "overwrite=true")
@@ -2120,6 +2130,43 @@ mod tests {
             std::fs::read(dir.path().join("report.xlsx")).unwrap(),
             b"xls"
         );
+    }
+
+    /// No save_path: a per-user cache dir keyed by card and file ref, so two
+    /// same-named attachments never clobber each other; the path is absolute.
+    #[tokio::test]
+    async fn download_file_default_location_is_per_file_under_the_cache_dir() {
+        let server = MockServer::start().await;
+        mock_card_and_classic_file(&server, 2).await;
+        let cache = tempfile::tempdir().unwrap();
+
+        let mut mcp = mcp_for(&server);
+        mcp.download_dir = cache.path().to_path_buf();
+        for _ in 0..2 {
+            // the default location is refreshed, never refused
+            let result = mcp
+                .download_file(Parameters(super::DownloadFileParams {
+                    card_id: 67_089_469,
+                    file_id: "61256602".into(),
+                    save_path: None,
+                    overwrite: None,
+                }))
+                .await
+                .unwrap();
+            assert_ne!(result.is_error, Some(true), "{}", tool_text(&result));
+            let value: serde_json::Value = serde_json::from_str(&tool_text(&result)).unwrap();
+            let expected = cache
+                .path()
+                .join("67089469")
+                .join("61256602")
+                .join("probe-attach.txt");
+            assert_eq!(value["path"], expected.to_string_lossy().as_ref());
+            assert!(std::path::Path::new(value["path"].as_str().unwrap()).is_absolute());
+            assert_eq!(
+                std::fs::read_to_string(expected).unwrap(),
+                "attachment body"
+            );
+        }
     }
 
     #[tokio::test]

@@ -97,8 +97,59 @@ async fn card_file_list_json_prints_raw_files() {
     let files = value.as_array().unwrap();
     assert_eq!(files.len(), 2);
     assert_eq!(files[0]["id"], 61_256_602);
+    assert!(files[0].get("uid").is_none(), "{value}");
     assert_eq!(files[1]["id"], 0);
+    assert_eq!(files[1]["uid"], NEWER_UID, "{value}");
     assert_eq!(files[1]["size"], 58_818);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn card_file_get_output_with_missing_parent_names_the_path() {
+    let api = MockServer::start().await;
+    let storage = MockServer::start().await;
+    mock_card(&api, &storage).await;
+    mock_classic_download(&storage, 1).await;
+    let tmp = tempfile::tempdir().unwrap();
+
+    kaiten(tmp.path(), &api.uri(), tmp.path())
+        .args([
+            "card",
+            "file",
+            "get",
+            "67089469",
+            "61256602",
+            "-o",
+            "missing/dir/x.txt",
+        ])
+        .assert()
+        .failure()
+        .code(1)
+        .stderr(predicate::str::contains("missing/dir/x.txt"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn card_file_get_output_missing_directory_with_trailing_slash_is_an_error() {
+    let api = MockServer::start().await;
+    let storage = MockServer::start().await;
+    mock_card(&api, &storage).await;
+    mock_classic_download(&storage, 0).await; // refused before any download
+    let tmp = tempfile::tempdir().unwrap();
+
+    kaiten(tmp.path(), &api.uri(), tmp.path())
+        .args([
+            "card",
+            "file",
+            "get",
+            "67089469",
+            "61256602",
+            "-o",
+            "downloads/",
+        ])
+        .assert()
+        .failure()
+        .code(1)
+        .stderr(predicate::str::contains("does not exist"));
+    assert!(!tmp.path().join("downloads").exists());
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -134,7 +185,13 @@ async fn card_file_get_saves_original_name_in_cwd() {
         .assert()
         .success()
         .stdout(predicate::str::contains(
-            "saved probe-attach.txt (15 bytes) to probe-attach.txt",
+            "saved probe-attach.txt (15 bytes) to ",
+        ))
+        .stdout(predicate::str::contains(
+            cwd.path()
+                .join("probe-attach.txt")
+                .to_string_lossy()
+                .as_ref(),
         ));
     assert_eq!(
         std::fs::read_to_string(cwd.path().join("probe-attach.txt")).unwrap(),

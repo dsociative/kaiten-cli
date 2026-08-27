@@ -22,7 +22,8 @@ pub enum KaitenError {
     },
     #[error("invalid base url: {0}")]
     InvalidBaseUrl(String),
-    /// Local filesystem failure while reading a file to upload.
+    /// Local filesystem failure (reading an upload, writing a download), or
+    /// an attachment without a usable download url (`InvalidInput`).
     #[error("file error: {0}")]
     Io(#[from] std::io::Error),
 }

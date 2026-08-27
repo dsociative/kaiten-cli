@@ -161,7 +161,8 @@ pub struct Blocker {
 /// `id`, sends `size` as a string and a host-root-relative `url` under
 /// `/api/v1` that requires the API token. Both parse into this struct: `id`
 /// is `0` when the API identifies the file only by a UUID — address such
-/// files through [`FileRef`], which recovers the UUID from `url`.
+/// files through [`FileRef`], which recovers the UUID from `url`. Parsing is
+/// tolerant only for self-describing formats such as JSON.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(from = "RawCardFile")]
 pub struct CardFile {
@@ -229,11 +230,13 @@ impl From<RawCardFile> for CardFile {
 
 impl CardFile {
     /// UUID under which the newer storage addresses the file: the last path
-    /// segment of `url` (`/api/v1/cards/{card_uid}/files/{uuid}`).
+    /// segment of `url` (`/api/v1/cards/{card_uid}/files/{uuid}`), minus any
+    /// extension (a classic url ends in `<uuid>.ext`).
     fn uuid_from_url(&self) -> Option<&str> {
         let path = self.url.as_deref()?.split(['?', '#']).next()?;
         let last = path.trim_end_matches('/').rsplit('/').next()?;
-        (!last.is_empty()).then_some(last)
+        let stem = last.split('.').next()?;
+        (!stem.is_empty()).then_some(stem)
     }
 }
 
@@ -288,7 +291,8 @@ mod de {
         }
     }
 
-    /// `null`, a number, or a string holding a number; anything else is `None`.
+    /// `null` → `None`; a number, or a string holding one, → the value; a
+    /// string holding anything else → `None`. Other JSON types still error.
     pub(super) fn opt_u64_or_string<'de, D: serde::Deserializer<'de>>(
         d: D,
     ) -> Result<Option<u64>, D::Error> {

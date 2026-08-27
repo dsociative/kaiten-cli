@@ -257,8 +257,10 @@ impl KaitenClient {
     /// The bearer token is sent only when `url` is on the API origin — never
     /// to the public file host, nor to a storage host reached through a
     /// redirect (reqwest's default policy follows up to 10 hops and drops
-    /// `Authorization` when the host changes). Retry, tracing and error
-    /// mapping mirror `send_with_retry`; the body is binary and never traced.
+    /// `Authorization` when the host or port changes; a same-host https→http
+    /// downgrade would keep it, which only Kaiten itself could trigger).
+    /// Retry and tracing mirror `send_with_retry`; the body is binary and
+    /// never traced; errors go through `download_error`.
     pub(crate) async fn get_bytes(&self, url: &url::Url) -> Result<Vec<u8>> {
         let with_auth = url.origin() == self.base_url.origin();
         let mut retries = 0u32;
@@ -296,7 +298,7 @@ impl KaitenClient {
             }
             if !status.is_success() {
                 let text = resp.text().await?;
-                return Err(api_error(status, text));
+                return Err(download_error(status, text));
             }
             return Ok(resp.bytes().await?.to_vec());
         }
@@ -340,6 +342,28 @@ fn rate_limit_reset(resp: &reqwest::Response) -> Option<u64> {
         .get("X-RateLimit-Reset")
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.parse::<u64>().ok())
+}
+
+/// `api_error` for attachment downloads: a file or storage host answers with
+/// whole HTML pages, so a non-JSON body is summarised by the reason phrase
+/// and only a truncated excerpt is kept.
+fn download_error(status: reqwest::StatusCode, text: String) -> KaitenError {
+    const KEEP: usize = 200;
+    if serde_json::from_str::<serde_json::Value>(&text).is_ok() {
+        return api_error(status, text);
+    }
+    let body = match text.char_indices().nth(KEEP) {
+        Some((cut, _)) => format!("{}…", &text[..cut]),
+        None => text,
+    };
+    KaitenError::Api {
+        status: status.as_u16(),
+        message: status
+            .canonical_reason()
+            .unwrap_or("unknown error")
+            .to_owned(),
+        body,
+    }
 }
 
 /// Non-2xx → `Api { status, message, body }`: `message` is the JSON

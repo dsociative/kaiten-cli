@@ -298,3 +298,37 @@ async fn download_to_writes_bytes_to_path() {
     client.files().download_to(&file, &target).await.unwrap();
     assert_eq!(std::fs::read(&target).unwrap(), vec![0, 1, 2, 255]);
 }
+
+/// An expired public link answers with a whole HTML page; the error must
+/// stay readable (reason phrase) and must not carry the page around.
+#[tokio::test]
+async fn download_html_error_page_is_not_dumped_verbatim() {
+    let storage = MockServer::start().await;
+    let page = format!(
+        "<!DOCTYPE html><html><body>{}</body></html>",
+        "x".repeat(5000)
+    );
+    Mock::given(method("GET"))
+        .and(path("/gone.txt"))
+        .respond_with(ResponseTemplate::new(404).set_body_raw(page, "text/html"))
+        .mount(&storage)
+        .await;
+
+    let client = KaitenClient::new("http://127.0.0.1:9", "test-token").unwrap();
+    let file = card_file(&format!(
+        r#"{{"id": 1, "name": "gone.txt", "url": "{}/gone.txt"}}"#,
+        storage.uri()
+    ));
+    let err = client.files().download(&file).await.unwrap_err();
+    assert_eq!(err.to_string(), "API error 404: Not Found");
+    match err {
+        kaiten_client::KaitenError::Api { body, .. } => {
+            assert!(
+                body.len() <= 300,
+                "body must be truncated, got {} bytes",
+                body.len()
+            );
+        }
+        other => panic!("unexpected {other:?}"),
+    }
+}

@@ -329,7 +329,7 @@ pub enum CardFileCmd {
     },
     /// Detach a file by id (see `card view`)
     Rm { card: String, file_id: u64 },
-    /// List attachments (ID is the numeric id, or the uid for files that only have one)
+    /// List attachments (ID is the numeric id, or the uid for files without one)
     List { card: String },
     /// Download an attachment by id or uid (see `card file list`)
     Get {

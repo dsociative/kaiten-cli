@@ -24,10 +24,10 @@ impl Files<'_> {
     }
 
     /// Download an attachment's content. An absolute `url` (classic storage)
-    /// is fetched as is, without credentials; a host-root-relative one (newer
-    /// storage) is resolved against the API origin and fetched with the
-    /// token, following the redirect to storage. The whole body is held in
-    /// memory, as with [`Files::attach`].
+    /// is fetched as is; a host-root-relative one (newer storage) is resolved
+    /// against the API origin. The token goes only to the API origin — never
+    /// to the public file host, nor to a storage host reached through a
+    /// redirect. The whole body is held in memory, as with [`Files::attach`].
     pub async fn download(&self, file: &CardFile) -> Result<Vec<u8>> {
         let raw = file.url.as_deref().ok_or_else(|| {
             invalid_input(format!(
@@ -76,13 +76,25 @@ impl Files<'_> {
 }
 
 /// Absolute URLs pass through; a path is resolved against the API **origin**
-/// (`/api/v1/...` lives next to, not under, the `/api/latest` base).
+/// (`/api/v1/...` lives next to, not under, the `/api/latest` base) and must
+/// stay there — WHATWG parsing would otherwise let `/\host/x` wander off to
+/// another host, so the invariant is enforced here and not left to the
+/// caller's token check.
 pub(crate) fn resolve_file_url(base_url: &url::Url, raw: &str) -> Result<url::Url> {
     match url::Url::parse(raw) {
         Ok(url) => Ok(url),
-        Err(url::ParseError::RelativeUrlWithoutBase) => base_url
-            .join(&format!("/{}", raw.trim_start_matches('/')))
-            .map_err(|e| invalid_input(format!("attachment url `{raw}` is not valid: {e}"))),
+        Err(url::ParseError::RelativeUrlWithoutBase) => {
+            let resolved = base_url
+                .join(&format!("/{}", raw.trim_start_matches('/')))
+                .map_err(|e| invalid_input(format!("attachment url `{raw}` is not valid: {e}")))?;
+            if resolved.origin() == base_url.origin() {
+                Ok(resolved)
+            } else {
+                Err(invalid_input(format!(
+                    "attachment url `{raw}` does not resolve to the API origin"
+                )))
+            }
+        }
         Err(e) => Err(invalid_input(format!(
             "attachment url `{raw}` is not valid: {e}"
         ))),
@@ -126,6 +138,30 @@ mod tests {
             url.as_str(),
             "https://acme.kaiten.ru/api/v1/cards/u/files/f"
         );
+    }
+
+    /// WHATWG parsing turns `/\\host/x` into `https://host/x`: anything that
+    /// does not land on the API origin must be refused here, not one call away.
+    #[test]
+    fn backslash_tricks_cannot_escape_the_api_origin() {
+        for raw in [
+            "/\\evil.host/x",
+            "\\\\evil.host\\x",
+            "\\/evil.host/x",
+            "//evil.host/x",
+        ] {
+            match resolve_file_url(&base(), raw) {
+                Ok(url) => assert_eq!(
+                    url.origin(),
+                    base().origin(),
+                    "{raw} resolved off-origin to {url}"
+                ),
+                Err(crate::error::KaitenError::Io(e)) => {
+                    assert_eq!(e.kind(), std::io::ErrorKind::InvalidInput, "{raw}: {e}");
+                }
+                Err(other) => panic!("{raw}: unexpected {other:?}"),
+            }
+        }
     }
 
     #[test]

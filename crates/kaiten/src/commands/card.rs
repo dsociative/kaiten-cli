@@ -894,7 +894,9 @@ async fn run_file_list(client: &KaitenClient, json: bool, card: &str) -> Result<
     let card_id = parse_card_ref(card)?;
     let files = client.files().list(card_id).await?;
     if json {
-        return output::print_json(&files);
+        let entries: Vec<download::FileListEntry<'_>> =
+            files.iter().map(download::FileListEntry::from).collect();
+        return output::print_json(&entries);
     }
     if files.is_empty() {
         println!("no files on card {card_id}");
@@ -927,8 +929,8 @@ async fn run_file_get(
     let files = client.files().list(card_id).await?;
     let file = download::find_file(card_id, &files, &file_ref)?;
     let name = download::safe_file_name(file);
-    // "" as the default directory so the default target prints as a bare name
-    let target = download::target_path(to, Path::new(""), &name);
+    // "" as the default directory: the current directory, printed absolute by `save`
+    let target = download::target_path(to, Path::new(""), &name)?;
     download::ensure_writable(&target, force, "--force")?;
     let saved = download::save(client, file, &target).await?;
     if json {
