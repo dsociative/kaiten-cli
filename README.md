@@ -216,3 +216,11 @@ cargo fmt --all -- --check
 
 Licensed under either of [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE),
 at your option.
+
+## Versioning
+
+`MAJOR.MINOR.PATCH`, one version for both crates. New functionality bumps
+MINOR (`0.2` → `0.3`); fixes and dependency updates bump PATCH. Until 1.0 a
+MINOR bump may also carry a breaking change — the release notes say so when it
+does. Cargo treats `0.y` as the compatibility line, so a `"0.3"` requirement
+does not pick up `0.4.0` on its own.
