@@ -1,18 +1,53 @@
 use std::path::Path;
 
 use crate::client::KaitenClient;
-use crate::error::Result;
-use crate::models::CardFile;
+use crate::error::{KaitenError, Result};
+use crate::models::{CardFile, FileRef};
 
 /// Card file attachments facade. Construct via [`KaitenClient::files`].
 ///
-/// SECURITY: Kaiten serves uploaded files from a public (unguessable) URL
-/// without authentication — never attach secrets.
+/// SECURITY: Kaiten's classic storage serves uploaded files from a public
+/// (unguessable) URL without authentication — never attach secrets. The
+/// newer storage serves files through an authenticated API path that
+/// redirects to storage; [`Files::download`] sends the API token only to
+/// the API origin, never to a file or storage host.
 pub struct Files<'a> {
     pub(crate) client: &'a KaitenClient,
 }
 
 impl Files<'_> {
+    /// Attachments of a card, read from `GET /cards/{card_id}` — the
+    /// dedicated `GET /cards/{card_id}/files` returns `[]` on the newer
+    /// storage (issue #12), so it is not used.
+    pub async fn list(&self, card_id: u64) -> Result<Vec<CardFile>> {
+        Ok(self.client.cards().get(card_id).await?.files)
+    }
+
+    /// Download an attachment's content. An absolute `url` (classic storage)
+    /// is fetched as is, without credentials; a host-root-relative one (newer
+    /// storage) is resolved against the API origin and fetched with the
+    /// token, following the redirect to storage. The whole body is held in
+    /// memory, as with [`Files::attach`].
+    pub async fn download(&self, file: &CardFile) -> Result<Vec<u8>> {
+        let raw = file.url.as_deref().ok_or_else(|| {
+            invalid_input(format!(
+                "attachment `{}` ({}) has no download url",
+                file.name,
+                FileRef::from(file)
+            ))
+        })?;
+        let url = resolve_file_url(self.client.base_url(), raw)?;
+        self.client.get_bytes(&url).await
+    }
+
+    /// [`Files::download`] straight into `path` (created or truncated;
+    /// parent directories are not created).
+    pub async fn download_to(&self, file: &CardFile, path: &Path) -> Result<()> {
+        let bytes = self.download(file).await?;
+        tokio::fs::write(path, bytes).await?;
+        Ok(())
+    }
+
     /// PUT /cards/{card_id}/files — multipart upload, binary field `file`.
     ///
     /// Reads the whole file into memory (uploads are interactive-sized;
@@ -37,5 +72,68 @@ impl Files<'_> {
                 &format!("/cards/{card_id}/files/{file_id}"),
             )
             .await
+    }
+}
+
+/// Absolute URLs pass through; a path is resolved against the API **origin**
+/// (`/api/v1/...` lives next to, not under, the `/api/latest` base).
+pub(crate) fn resolve_file_url(base_url: &url::Url, raw: &str) -> Result<url::Url> {
+    match url::Url::parse(raw) {
+        Ok(url) => Ok(url),
+        Err(url::ParseError::RelativeUrlWithoutBase) => base_url
+            .join(&format!("/{}", raw.trim_start_matches('/')))
+            .map_err(|e| invalid_input(format!("attachment url `{raw}` is not valid: {e}"))),
+        Err(e) => Err(invalid_input(format!(
+            "attachment url `{raw}` is not valid: {e}"
+        ))),
+    }
+}
+
+fn invalid_input(message: String) -> KaitenError {
+    KaitenError::Io(std::io::Error::new(
+        std::io::ErrorKind::InvalidInput,
+        message,
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_file_url;
+
+    fn base() -> url::Url {
+        url::Url::parse("https://acme.kaiten.ru/api/latest").unwrap()
+    }
+
+    #[test]
+    fn absolute_url_is_kept_verbatim() {
+        let url = resolve_file_url(&base(), "https://files.kaiten.ru/abc.txt").unwrap();
+        assert_eq!(url.as_str(), "https://files.kaiten.ru/abc.txt");
+    }
+
+    #[test]
+    fn root_relative_url_uses_api_origin_not_base_path() {
+        let url = resolve_file_url(&base(), "/api/v1/cards/u/files/f").unwrap();
+        assert_eq!(
+            url.as_str(),
+            "https://acme.kaiten.ru/api/v1/cards/u/files/f"
+        );
+    }
+
+    #[test]
+    fn relative_url_without_leading_slash_is_rooted() {
+        let url = resolve_file_url(&base(), "api/v1/cards/u/files/f").unwrap();
+        assert_eq!(
+            url.as_str(),
+            "https://acme.kaiten.ru/api/v1/cards/u/files/f"
+        );
+    }
+
+    #[test]
+    fn garbage_url_is_invalid_input_io_error() {
+        let err = resolve_file_url(&base(), "http://[").unwrap_err();
+        assert!(
+            matches!(&err, crate::error::KaitenError::Io(e) if e.kind() == std::io::ErrorKind::InvalidInput),
+            "{err:?}"
+        );
     }
 }
