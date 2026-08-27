@@ -54,7 +54,7 @@
         "name": "todo",
         "policy_id": null,
         "sort_order": 1.1522949931390465,
-        "total_items": 1,
+        "total_items": 2,
         "uid": "19d5b8ab-1baf-4537-8d42-5578949e75dd",
         "updated": "2026-07-09T15:18:04.519Z"
       }
@@ -83,7 +83,7 @@
     "completed_at": null,
     "completed_on_time": null,
     "condition": 1,
-    "counters_recalculated_at": "2026-08-27T15:20:48.827Z",
+    "counters_recalculated_at": "2026-08-27T15:38:38.814Z",
     "created": "2026-07-09T15:17:59.905Z",
     "description_filled": true,
     "due_date": null,
@@ -130,7 +130,7 @@
     ],
     "first_moved_to_in_progress_at": null,
     "goals_done": 1,
-    "goals_total": 1,
+    "goals_total": 2,
     "has_blocked_children": false,
     "id": 67089469,
     "key": null,

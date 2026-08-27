@@ -7,8 +7,8 @@ use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 const CARD_WITH_FILES: &str = include_str!("fixtures/card_with_files.json");
-/// The full card capture with its attachment removed: what the API returns
-/// for a card that never had files (`"files": []`).
+/// The two-file fixture with `files` emptied: what the API returns for a
+/// card that never had files (`"files": []`).
 fn card_without_files() -> String {
     let mut card: serde_json::Value = serde_json::from_str(CARD_WITH_FILES).unwrap();
     card["files"] = serde_json::json!([]);

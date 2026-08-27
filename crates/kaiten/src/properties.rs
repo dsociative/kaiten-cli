@@ -17,6 +17,20 @@ const EXAMPLE: &str = r#"{"id_612634": [18929916]}"#;
 ///
 /// The message has no subject: callers prefix it with theirs
 /// (`--properties-json …` / `properties …`).
+/// `properties` counts as absent when the key is missing, `null` (a card that
+/// never had custom properties) or `{}` (after the last one is cleared, and
+/// on tariffs without custom properties at all).
+#[allow(
+    clippy::ref_option,
+    reason = "the signature is dictated by serde's skip_serializing_if"
+)]
+pub(crate) fn no_properties(v: &Option<serde_json::Value>) -> bool {
+    match v {
+        None => true,
+        Some(v) => v.is_null() || v.as_object().is_some_and(serde_json::Map::is_empty),
+    }
+}
+
 pub(crate) fn coerce_object(value: serde_json::Value) -> Result<serde_json::Value, String> {
     let value = match value {
         serde_json::Value::String(raw) => serde_json::from_str::<serde_json::Value>(&raw)

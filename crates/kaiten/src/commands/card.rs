@@ -119,7 +119,7 @@ fn print_card_details(card: &kaiten_client::Card) {
     if let Some(properties) = card
         .properties
         .as_ref()
-        .filter(|p| !p.is_null() && p.as_object().is_none_or(|o| !o.is_empty()))
+        .filter(|_| !properties::no_properties(&card.properties))
     {
         println!();
         println!("Properties:");

@@ -34,7 +34,7 @@ async fn checklist_list_prints_items_with_marks() {
         .success()
         .stdout(predicate::str::contains("todo (11747430)"))
         .stdout(predicate::str::contains("[x] 65658564 first item"))
-        .stdout(predicate::str::contains("[ ] 65658565 second item"));
+        .stdout(predicate::str::contains("[ ] 67215897 second item"));
 }
 
 #[tokio::test(flavor = "multi_thread")]

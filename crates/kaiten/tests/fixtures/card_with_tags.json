@@ -73,6 +73,23 @@
           "uid": "700601dd-9e37-4103-95d1-28edb55ff2df",
           "updated": "2026-07-09T15:18:05.995Z",
           "user_id": 1068514
+        },
+        {
+          "checked": false,
+          "checked_at": null,
+          "checker_id": null,
+          "checklist_id": 11747430,
+          "created": "2026-08-27T15:38:38.814Z",
+          "deleted": false,
+          "due_date": null,
+          "fts_version": "-861994313",
+          "id": 67215897,
+          "responsible_id": null,
+          "sort_order": 2.9747451677062653,
+          "text": "second item",
+          "uid": "95339a04-c3ae-498e-90e2-aa248ad51f54",
+          "updated": "2026-08-27T15:38:38.814Z",
+          "user_id": 1068514
         }
       ],
       "name": "todo",
@@ -107,7 +124,7 @@
   "completed_at": null,
   "completed_on_time": null,
   "condition": 1,
-  "counters_recalculated_at": "2026-08-27T15:20:48.827Z",
+  "counters_recalculated_at": "2026-08-27T15:38:38.814Z",
   "created": "2026-07-09T15:17:59.905Z",
   "description": "test **description**",
   "description_filled": true,
@@ -177,9 +194,9 @@
     }
   ],
   "first_moved_to_in_progress_at": null,
-  "fts_version": "-861987694",
+  "fts_version": "861987694",
   "goals_done": 1,
-  "goals_total": 1,
+  "goals_total": 2,
   "has_blocked_children": false,
   "id": 67089469,
   "import_id": null,
@@ -272,23 +289,26 @@
   "sprint_id": null,
   "state": 1,
   "tag_ids": [
-    1110772
+    1110772,
+    2220001
   ],
   "tags": [
     {
-      "id": 1110772,
-      "tag_id": 1110772,
-      "name": "cli-test",
-      "color": 15,
       "card_id": 67089469,
-      "created": "2026-07-09T15:18:07.303Z"
+      "color": 15,
+      "created": "2026-07-09T15:18:07.303Z",
+      "id": 1110772,
+      "name": "cli-test",
+      "tag_id": 1110772,
+      "updated": "2026-07-09T15:18:07.303Z"
     },
     {
       "id": 2220001,
       "name": "legacy-link",
       "color": 3,
       "card_id": 67089469,
-      "created": "2026-07-09T15:20:00.000Z"
+      "created": "2026-07-09T15:20:00.000Z",
+      "updated": "2026-07-09T15:20:00.000Z"
     }
   ],
   "time_blocked_sum": 0,

@@ -108,7 +108,7 @@ kaiten card tag add 67089469 backend
 kaiten card link 67089469 --blocked-by 67089500 --reason "waiting for API"
 kaiten card file add 67089469 ./screenshot.png    # uploads get a PUBLIC url
 kaiten card file list 67089469
-kaiten card file get 67089469 61256602 -o ./downloads/   # id or uid; into an existing dir or a file path; --force to overwrite
+kaiten card file get 67089469 62769658 -o ./downloads/   # id or uid; into an existing dir or a file path; --force to overwrite
 kaiten card time add 67089469 --minutes 30 --date 2026-07-16
 kaiten card list --mine --state in-progress --sort updated --desc
 

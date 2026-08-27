@@ -91,7 +91,8 @@ async fn list_sends_filter_query_params_and_parses_list_card() {
     assert_eq!(card.tags.len(), 1);
     let board = card.board.as_ref().unwrap();
     assert_eq!(board.id, 1_826_109);
-    assert_eq!(board.columns.len(), 0);
+    // the nested board comes without columns/lanes → defaulted empty vecs
+    assert!(board.columns.is_empty());
     assert_eq!(card.column.as_ref().unwrap().column_type, Some(1));
     assert_eq!(card.card_type.as_ref().unwrap().name, "Card");
     assert_eq!(
@@ -126,7 +127,7 @@ async fn get_parses_full_card() {
     assert_eq!(card.tags[0].tag_id, Some(1_110_772));
     assert_eq!(card.checklists.len(), 1);
     assert_eq!(card.checklists[0].name, "todo");
-    assert_eq!(card.checklists[0].items.len(), 1);
+    assert_eq!(card.checklists[0].items.len(), 2);
     assert_eq!(card.checklists[0].items[0].text, "first item");
     assert_eq!(card.checklists[0].items[0].checked, Some(true));
     // links, blockers and files embedded in the full card
