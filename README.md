@@ -173,7 +173,7 @@ by area (✅ covered, ◐ partial, — not covered):
 | Card links: children / parents / blockers | ✅ `card link/unlink/unblock` | ✅ `link_cards` etc. |
 | Files: attach / detach | ✅ (uploads get a PUBLIC url!) | ✅ |
 | External links | — | — |
-| Custom properties: reference + set values | ✅ `property list/values`, `--properties-json` | ✅ two tools + `properties` |
+| Custom properties: reference + set values | ✅ `property list/values`, `--properties-json` | ✅ two tools + `properties` (a JSON object; a JSON string holding one is accepted, anything else is rejected before the API call; mutations echo the resulting `properties`) |
 | Time logs | ✅ `card time add/list` | ✅ |
 | Events: polling for changes | — | ✅ `poll_updates` (cursor-based) |
 | Events: webhooks | — deliberately (needs a public URL) | — |

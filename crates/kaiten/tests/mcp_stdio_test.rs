@@ -405,6 +405,25 @@ async fn mcp_stdio_tools_call_legacy_wire_contract() {
         "invalid params must be rejected before any API call"
     );
 
+    // Wrong `properties` shape (issue #15): a tool error before any HTTP
+    // request — previously forwarded verbatim and silently ignored by the API.
+    let bad_props = mcp.call_tool(
+        7,
+        "update_card",
+        &serde_json::json!({ "card_id": 1, "properties": "not json" }),
+    );
+    assert!(bad_props.get("error").is_none(), "{bad_props}");
+    assert_eq!(
+        bad_props["result"]["isError"],
+        serde_json::json!(true),
+        "{bad_props}"
+    );
+    assert!(
+        tool_text(&bad_props).starts_with("properties "),
+        "{bad_props}"
+    );
+    assert!(server.received_requests().await.unwrap().is_empty());
+
     // Unknown tool: JSON-RPC "invalid params" (-32602), as with rmcp 2.
     let unknown = mcp.call_tool(4, "no_such_tool", &serde_json::json!({}));
     assert_eq!(

@@ -291,7 +291,9 @@ impl From<&Card> for CardDetail {
 
 /// Response of card mutations (`create_card`, `update_card`, `move_card`):
 /// enough to confirm the result and hand the user a link — details on demand
-/// via `get_card`.
+/// via `get_card`. `properties` echoes the card's custom property values as
+/// the server now holds them (issue #15: without it a dropped write and
+/// "this tool never returns properties" were indistinguishable).
 #[derive(Debug, serde::Serialize)]
 pub struct MutationResult {
     pub id: u64,
@@ -303,6 +305,8 @@ pub struct MutationResult {
     pub column: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub board_id: Option<u64>,
+    #[serde(skip_serializing_if = "no_properties")]
+    pub properties: Option<serde_json::Value>,
 }
 
 impl MutationResult {
@@ -314,6 +318,7 @@ impl MutationResult {
             title: card.title.clone(),
             column: card.column.as_ref().map(|c| c.title.clone()),
             board_id: card.board_id,
+            properties: card.properties.clone(),
         }
     }
 }
