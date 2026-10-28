@@ -919,7 +919,7 @@ dependencies = [
 
 [[package]]
 name = "kaiten-cli"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "assert_cmd",
  "clap",
@@ -947,7 +947,7 @@ dependencies = [
 
 [[package]]
 name = "kaiten-client"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "reqwest",
  "serde",
