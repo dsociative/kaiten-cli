@@ -26,7 +26,10 @@ fn to_query_skips_none_and_joins_member_ids() {
 
 #[test]
 fn to_query_is_empty_for_default_filter() {
-    assert!(CardFilter::default().to_query().is_empty());
+    assert_eq!(
+        CardFilter::default().to_query(),
+        Vec::<(String, String)>::new()
+    );
 }
 
 #[test]
